@@ -1,0 +1,22 @@
+{
+  "selectors": {
+    "0xd0e30db0": "deposit()",
+    "0xd386b343": "buyToBorrowV2((address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address),bytes,uint256,((address,address,bytes32,uint256,uint256,uint8,(address,uint16),uint256),(uint256,uint256,uint256,uint256),bytes32[],bytes,bytes))",
+    "0x3593564c": "execute(bytes,bytes[],uint256)",
+    "0xa1ccb98e": "transfer(address,uint8,(address,uint256,uint256,address,uint8)[],uint256)",
+    "0x8e651e8f": "<UNKNOWN>",
+    "0x7a8d3ec5": "<UNKNOWN>",
+    "0x42842e0e": "safeTransferFrom(address,address,uint256)",
+    "0xfa461e33": "uniswapV3SwapCallback(int256,int256,bytes)",
+    "0xe7bd6a8d": "<UNKNOWN>",
+    "0x2271335a": "<UNKNOWN>",
+    "0x074b46c7": "<UNKNOWN>",
+    "0x9555a942": "withdrawFrom(address,address,uint256)",
+    "0x70a08231": "balanceOf(address)",
+    "0x70bce2d6": "takeAskSingle(((address,address,bytes32,uint256,uint256,uint8,(address,uint16),uint256),(uint256,bytes32[],(uint256,uint256,uint256,uint256),(uint256,uint256)),(address,uint16),bytes,address),bytes)",
+    "0x128acb08": "swap(address,bool,int256,uint160,bytes)",
+    "0x2e1a7d4d": "withdraw(uint256)",
+    "0xa9059cbb": "transfer(address,uint256)",
+    "0x150b7a02": "onERC721Received(address,address,uint256,bytes)"
+  }
+}
