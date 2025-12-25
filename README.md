@@ -32,8 +32,8 @@ With selector resolution:
 torge tx 0x1234...abcd --rpc-url http://localhost:8545 --resolve-selectors
 ```
 
-With argument decoding and calldata:
+With argument decoding, calldata, and events:
 
 ```bash
-torge tx 0x1234...abcd --resolve-selectors --include-args --include-calldata
+torge tx 0x1234...abcd --resolve-selectors --include-args --include-calldata --include-logs
 ```

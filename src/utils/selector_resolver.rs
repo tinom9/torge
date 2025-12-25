@@ -143,6 +143,96 @@ impl<'a> SelectorResolver<'a> {
         Some(sig)
     }
 
+    /// Resolve an event topic0 hash to an event signature.
+    pub fn resolve_event(&mut self, topic0: &str) -> Option<String> {
+        if !self.enabled {
+            return None;
+        }
+
+        // Topic0 should be a 32-byte hash (66 chars with 0x prefix).
+        if !topic0.starts_with("0x") || topic0.len() != 66 {
+            return None;
+        }
+
+        // Check memory cache first.
+        if let Some(sig) = self.memory_cache.get(topic0) {
+            return (sig != CACHE_MISS_MARKER).then(|| sig.clone());
+        }
+
+        // Check disk cache.
+        if let Some(sig) = self.disk_cache.get(topic0) {
+            self.memory_cache.insert(topic0.to_owned(), sig.clone());
+            return (sig != CACHE_MISS_MARKER).then(|| sig.clone());
+        }
+
+        // Query Sourcify API for event signature.
+        let base_url =
+            std::env::var("SOURCIFY_URL").unwrap_or_else(|_| DEFAULT_SOURCIFY_URL.to_owned());
+        let url = format!("{base_url}signature-database/v1/lookup?event={topic0}&filter=false");
+
+        let resp = match self
+            .client
+            .get(&url)
+            .send()
+            .ok()
+            .and_then(|r| r.error_for_status().ok())
+        {
+            Some(r) => r,
+            None => {
+                self.cache_miss(topic0);
+                return None;
+            }
+        };
+
+        #[derive(Deserialize)]
+        struct SourcifyEventResponse {
+            ok: bool,
+            result: SourcifyEventResult,
+        }
+
+        #[derive(Deserialize)]
+        struct SourcifyEventResult {
+            event: HashMap<String, Vec<SourcifyEntry>>,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SourcifyEntry {
+            name: String,
+            #[allow(dead_code)]
+            filtered: bool,
+            #[allow(dead_code)]
+            has_verified_contract: bool,
+        }
+
+        let response: SourcifyEventResponse = match resp.json().ok() {
+            Some(r) => r,
+            None => {
+                self.cache_miss(topic0);
+                return None;
+            }
+        };
+
+        if !response.ok {
+            self.cache_miss(topic0);
+            return None;
+        }
+
+        let entries = match response.result.event.get(topic0) {
+            Some(e) if !e.is_empty() => e,
+            _ => {
+                self.cache_miss(topic0);
+                return None;
+            }
+        };
+
+        // Take the first entry (could prioritize verified contracts like we do for functions).
+        let sig = entries.first().map(|e| e.name.clone())?;
+
+        self.cache_signature(topic0, &sig);
+        Some(sig)
+    }
+
     fn cache_miss(&mut self, selector: &str) {
         self.memory_cache
             .insert(selector.to_owned(), CACHE_MISS_MARKER.to_owned());

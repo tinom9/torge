@@ -1,4 +1,9 @@
-use crate::utils::{abi_decoder, precompiles, rpc_url, selector_resolver::SelectorResolver};
+use crate::utils::{
+    abi_decoder,
+    event_formatter::{print_log, Log},
+    hex_utils, precompiles, rpc_url,
+    selector_resolver::SelectorResolver,
+};
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use clap::Parser;
 use reqwest::blocking::Client;
@@ -36,6 +41,13 @@ pub struct TxArgs {
     /// Also print the raw calldata hex for each call (for manual inspection).
     #[arg(long)]
     pub include_calldata: bool,
+
+    /// Include event logs (emits) in the trace output.
+    ///
+    /// Without `--resolve-selectors`, shows raw topic0 and full data.
+    /// With `--resolve-selectors`, resolves event names and decodes parameters.
+    #[arg(long)]
+    pub include_logs: bool,
 }
 
 #[derive(Debug, Error)]
@@ -83,6 +95,8 @@ struct CallTrace {
     input: Option<String>,
     error: Option<String>,
     #[serde(default)]
+    logs: Vec<Log>,
+    #[serde(default)]
     calls: Vec<CallTrace>,
 }
 
@@ -103,7 +117,7 @@ pub fn run(args: TxArgs) -> Result<(), TxError> {
         .no_proxy()
         .build()?;
 
-    let trace = debug_trace_transaction(&client, &rpc_url, &args.tx_hash)?;
+    let trace = debug_trace_transaction(&client, &rpc_url, &args.tx_hash, args.include_logs)?;
 
     let mut resolver = SelectorResolver::new(&client, args.resolve_selectors);
     print_trace(
@@ -111,6 +125,7 @@ pub fn run(args: TxArgs) -> Result<(), TxError> {
         &mut resolver,
         args.include_args,
         args.include_calldata,
+        args.include_logs,
     );
 
     Ok(())
@@ -120,6 +135,7 @@ fn debug_trace_transaction(
     client: &Client,
     rpc_url: &str,
     tx_hash: &str,
+    include_logs: bool,
 ) -> Result<CallTrace, TxError> {
     let payload = json!({
         "jsonrpc": "2.0",
@@ -128,9 +144,11 @@ fn debug_trace_transaction(
         "params": [
             tx_hash,
             {
-                // Use geth's callTracer to obtain a call tree similar to `cast run`.
                 "tracer": "callTracer",
-                "onlyTopCall": false,
+                "tracerConfig": {
+                    "onlyTopCall": false,
+                    "withLog": include_logs,
+                }
             }
         ]
     });
@@ -152,15 +170,23 @@ fn debug_trace_transaction(
         .ok_or_else(|| TxError::Decode("missing result field in RPC response".into()))
 }
 
-/// Print a hierarchical gas trace in a style similar to `cast run`'s call tree.
 fn print_trace(
     root: &CallTrace,
     resolver: &mut SelectorResolver,
     include_args: bool,
     include_calldata: bool,
+    include_logs: bool,
 ) {
     println!("Traces:");
-    print_call(root, "", true, resolver, include_args, include_calldata);
+    print_call(
+        root,
+        "",
+        true,
+        resolver,
+        include_args,
+        include_calldata,
+        include_logs,
+    );
 }
 
 fn print_call(
@@ -170,21 +196,21 @@ fn print_call(
     resolver: &mut SelectorResolver,
     include_args: bool,
     include_calldata: bool,
+    include_logs: bool,
 ) {
     let gas_used = node
         .gas_used
         .as_deref()
-        .and_then(parse_hex_u64)
+        .and_then(hex_utils::parse_hex_u64)
         .unwrap_or(0);
 
     let to = node.to.as_deref().unwrap_or("?");
-
     let precompile = precompiles::get_precompile_info(to);
 
     let value = node
         .value
         .as_deref()
-        .and_then(parse_hex_u64)
+        .and_then(hex_utils::parse_hex_u64)
         .filter(|&v| v > 0);
 
     let mut decoded: Option<Vec<(DynSolType, DynSolValue)>> = None;
@@ -273,6 +299,19 @@ fn print_call(
 
     let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
     let meta_prefix = &child_prefix;
+
+    let logs_count = if include_logs { node.logs.len() } else { 0 };
+    let total_items = logs_count + node.calls.len();
+    let mut item_idx = 0;
+
+    if include_logs {
+        for log in &node.logs {
+            let is_last_item = item_idx == total_items - 1;
+            print_log(log, &child_prefix, is_last_item, resolver);
+            item_idx += 1;
+        }
+    }
+
     let mut data_printed = false;
 
     if let Some(args) = decoded {
@@ -314,24 +353,19 @@ fn print_call(
         }
     }
 
-    let children = &node.calls;
-    let last_idx = children.len().saturating_sub(1);
-
-    for (i, child) in children.iter().enumerate() {
+    for child in &node.calls {
+        let is_last_item = item_idx == total_items - 1;
         print_call(
             child,
             &child_prefix,
-            i == last_idx,
+            is_last_item,
             resolver,
             include_args,
             include_calldata,
+            include_logs,
         );
+        item_idx += 1;
     }
-}
-
-fn parse_hex_u64(s: &str) -> Option<u64> {
-    let s = s.strip_prefix("0x").unwrap_or(s);
-    u64::from_str_radix(s, 16).ok()
 }
 
 fn extract_selector(input: &str) -> Option<String> {
@@ -375,14 +409,6 @@ fn print_arg(prefix: &str, depth: usize, index: usize, ty: &DynSolType, value: &
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_hex_u64() {
-        assert_eq!(parse_hex_u64("0x10"), Some(16));
-        assert_eq!(parse_hex_u64("10"), Some(16));
-        assert_eq!(parse_hex_u64("0xff"), Some(255));
-        assert_eq!(parse_hex_u64("invalid"), None);
-    }
 
     #[test]
     fn test_extract_selector() {
