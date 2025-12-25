@@ -1,8 +1,17 @@
 # Torge
 
+[![Crates.io](https://img.shields.io/crates/v/torge.svg)](https://crates.io/crates/torge)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 CLI tool to produce Foundry-style traces for EVM transactions through `debug_traceTransaction` RPC requests.
 
 ## Installation
+
+From [crates.io](https://crates.io/crates/torge):
+
+```bash
+cargo install torge
+```
 
 From source:
 
