@@ -26,6 +26,13 @@ pub struct CallArgs {
     #[arg(long)]
     pub value: Option<String>,
 
+    /// Block number or tag to simulate against (default: `latest`).
+    ///
+    /// Accepts tags (`latest`, `earliest`, `pending`, `safe`, `finalized`)
+    /// or a block number (decimal `12345678` or hex `0xBC614E`).
+    #[arg(long, default_value = "latest")]
+    pub block: String,
+
     #[command(flatten)]
     pub opts: TraceOpts,
 }
@@ -39,6 +46,8 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
     if let Some(gas) = &args.gas_limit {
         trace::validate_hex(gas, "--gas-limit")?;
     }
+
+    let block_id = parse_block_id(&args.block)?;
 
     let mut tx_object = json!({
         "to": args.to,
@@ -62,7 +71,7 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
         "method": "debug_traceCall",
         "params": [
             tx_object,
-            "latest",
+            block_id,
             {
                 "tracer": "callTracer",
                 "tracerConfig": {
@@ -74,4 +83,63 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
     });
 
     trace::execute_and_print(&payload, args.opts)
+}
+
+/// Parse a block identifier from user input into a JSON-RPC block parameter.
+///
+/// Accepts named tags (`latest`, `earliest`, `pending`, `safe`, `finalized`),
+/// hex block numbers (`0xBC614E`), or decimal block numbers (`12345678`).
+fn parse_block_id(block: &str) -> Result<String, TraceError> {
+    match block {
+        "latest" | "earliest" | "pending" | "safe" | "finalized" => Ok(block.to_string()),
+        s if s.starts_with("0x") || s.starts_with("0X") => {
+            let hex = &s[2..];
+            if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(TraceError::InvalidInput(format!(
+                    "--block: invalid hex block number '{s}'"
+                )));
+            }
+            Ok(format!("0x{hex}"))
+        }
+        s => {
+            let num: u64 = s.parse().map_err(|_| {
+                TraceError::InvalidInput(format!("--block: invalid block identifier '{s}'"))
+            })?;
+            Ok(format!("0x{num:x}"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_block_id_tags() {
+        assert_eq!(parse_block_id("latest").unwrap(), "latest");
+        assert_eq!(parse_block_id("earliest").unwrap(), "earliest");
+        assert_eq!(parse_block_id("pending").unwrap(), "pending");
+        assert_eq!(parse_block_id("safe").unwrap(), "safe");
+        assert_eq!(parse_block_id("finalized").unwrap(), "finalized");
+    }
+
+    #[test]
+    fn test_parse_block_id_decimal() {
+        assert_eq!(parse_block_id("12345678").unwrap(), "0xbc614e");
+        assert_eq!(parse_block_id("0").unwrap(), "0x0");
+    }
+
+    #[test]
+    fn test_parse_block_id_hex() {
+        assert_eq!(parse_block_id("0xBC614E").unwrap(), "0xBC614E");
+        assert_eq!(parse_block_id("0x0").unwrap(), "0x0");
+    }
+
+    #[test]
+    fn test_parse_block_id_invalid() {
+        assert!(parse_block_id("abc").is_err());
+        assert!(parse_block_id("-1").is_err());
+        assert!(parse_block_id("0x").is_err());
+        assert!(parse_block_id("0xGG").is_err());
+    }
 }

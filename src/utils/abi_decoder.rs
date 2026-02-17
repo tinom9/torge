@@ -282,10 +282,7 @@ mod tests {
             616c616e63650000000000000000000000000000000000000000000000000000";
         let reason = decode_revert_reason(output);
         assert!(reason.is_some());
-        assert_eq!(
-            reason.unwrap(),
-            "ERC20: transfer amount exceeds balance"
-        );
+        assert_eq!(reason.unwrap(), "ERC20: transfer amount exceeds balance");
     }
 
     #[test]
