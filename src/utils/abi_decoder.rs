@@ -133,14 +133,37 @@ pub fn decode_revert_reason(output: &str) -> Option<String> {
         "4e487b71" => {
             let ty: DynSolType = "(uint256)".parse().ok()?;
             let decoded = ty.abi_decode_params(&data).ok()?;
-            let code = if let DynSolValue::Tuple(vals) = &decoded {
+            let code_val = if let DynSolValue::Tuple(vals) = &decoded {
                 vals.first().map(format_value)
             } else {
                 Some(format_value(&decoded))
             };
-            Some(format!("Panic({})", code.unwrap_or_default()))
+            let code_str = code_val.unwrap_or_default();
+            let desc = panic_description(&code_str);
+            if desc.is_empty() {
+                Some(format!("Panic({code_str})"))
+            } else {
+                Some(format!("Panic({code_str}: {desc})"))
+            }
         }
         _ => None,
+    }
+}
+
+/// Map a Solidity panic code to a human-readable description.
+fn panic_description(code: &str) -> &'static str {
+    match code {
+        "0" => "generic/compiler-inserted",
+        "1" => "assertion failed",
+        "17" => "arithmetic overflow/underflow",
+        "18" => "division or modulo by zero",
+        "33" => "invalid enum conversion",
+        "34" => "invalid storage access",
+        "49" => "pop on empty array",
+        "50" => "out-of-bounds array access",
+        "65" => "out of memory",
+        "81" => "call to zero-initialized function",
+        _ => "",
     }
 }
 
@@ -291,7 +314,7 @@ mod tests {
         let output = "0x4e487b710000000000000000000000000000000000000000000000000000000000000011";
         let reason = decode_revert_reason(output);
         assert!(reason.is_some());
-        assert_eq!(reason.unwrap(), "Panic(17)");
+        assert_eq!(reason.unwrap(), "Panic(17: arithmetic overflow/underflow)");
     }
 
     #[test]

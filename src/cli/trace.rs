@@ -1,5 +1,6 @@
 use crate::utils::{
     abi_decoder,
+    color::Palette,
     event_formatter::{print_log, Log},
     hex_utils, precompiles, rpc_url,
     selector_resolver::SelectorResolver,
@@ -50,6 +51,10 @@ pub struct TraceOpts {
     /// Disable system proxy for RPC requests.
     #[arg(long)]
     pub no_proxy: bool,
+
+    /// Disable colored output (auto-detected when stdout is not a terminal).
+    #[arg(long)]
+    pub no_color: bool,
 }
 
 #[derive(Debug, Error)]
@@ -173,6 +178,12 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
 
     let call_trace = parse_rpc_response(resp)?;
 
+    let palette = if opts.no_color {
+        Palette::new(false)
+    } else {
+        Palette::auto()
+    };
+
     let mut resolver = SelectorResolver::new(client, opts.resolve_selectors);
     print_trace(
         &call_trace,
@@ -180,6 +191,7 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
         opts.include_args,
         opts.include_calldata,
         opts.include_logs,
+        palette,
     );
 
     Ok(())
@@ -187,7 +199,18 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
 
 /// Parse the RPC response, returning the result or an error.
 fn parse_rpc_response(resp: reqwest::blocking::Response) -> Result<CallTrace, TraceError> {
-    let rpc_resp: RpcResponse<CallTrace> = resp.json()?;
+    let status = resp.status();
+    let body = resp.text()?;
+
+    if !status.is_success() {
+        return Err(TraceError::Decode(format!(
+            "HTTP {status}: {}",
+            body.chars().take(200).collect::<String>()
+        )));
+    }
+
+    let rpc_resp: RpcResponse<CallTrace> = serde_json::from_str(&body)
+        .map_err(|e| TraceError::Decode(format!("invalid JSON: {e}")))?;
 
     if let Some(err) = rpc_resp.error {
         return Err(TraceError::Rpc(err.message, err.code));
@@ -204,6 +227,7 @@ fn print_trace(
     include_args: bool,
     include_calldata: bool,
     include_logs: bool,
+    palette: Palette,
 ) {
     println!("Traces:");
     print_call(
@@ -214,10 +238,15 @@ fn print_trace(
         include_args,
         include_calldata,
         include_logs,
+        palette,
     );
 }
 
-#[allow(clippy::too_many_lines, clippy::fn_params_excessive_bools)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::fn_params_excessive_bools,
+    clippy::too_many_arguments
+)]
 fn print_call(
     node: &CallTrace,
     prefix: &str,
@@ -226,6 +255,7 @@ fn print_call(
     include_args: bool,
     include_calldata: bool,
     include_logs: bool,
+    pal: Palette,
 ) {
     let gas_used = node
         .gas_used
@@ -281,35 +311,43 @@ fn print_call(
         (to, sig)
     };
 
-    let call_desc = if let Some(val) = value {
+    let colored_addr = pal.cyan(display_addr);
+    let value_str = value.map(|v| pal.yellow(&format!("{{value: {v}}}")));
+
+    let call_desc = if let Some(val_s) = &value_str {
         if sig.is_empty() {
-            format!("{display_addr}{{value: {val}}}")
+            format!("{colored_addr}{val_s}")
         } else if let Some(paren_pos) = sig.find('(') {
             format!(
-                "{display_addr}::{}{{value: {}}}{}",
-                &sig[..paren_pos],
-                val,
+                "{colored_addr}::{}{val_s}{}",
+                pal.bold(&sig[..paren_pos]),
                 &sig[paren_pos..]
             )
         } else {
-            format!("{display_addr}::{sig}{{value: {val}}}")
+            format!("{colored_addr}::{}{val_s}", pal.bold(&sig))
         }
     } else if sig.is_empty() {
-        display_addr.to_string()
+        colored_addr
+    } else if let Some(paren_pos) = sig.find('(') {
+        format!(
+            "{colored_addr}::{}{}",
+            pal.bold(&sig[..paren_pos]),
+            &sig[paren_pos..]
+        )
     } else {
-        format!("{display_addr}::{sig}")
+        format!("{colored_addr}::{sig}")
     };
 
     let call_type = node.call_type.as_deref().unwrap_or("").to_uppercase();
 
     let call_type_suffix = match call_type.as_str() {
-        "DELEGATECALL" => " [delegatecall]",
-        "STATICCALL" => " [staticcall]",
-        "CALLCODE" => " [callcode]",
-        "CREATE" => " [create]",
-        "CREATE2" => " [create2]",
-        _ if !call_type.is_empty() => " [call]",
-        _ => "",
+        "DELEGATECALL" => pal.dim(" [delegatecall]"),
+        "STATICCALL" => pal.dim(" [staticcall]"),
+        "CALLCODE" => pal.dim(" [callcode]"),
+        "CREATE" => pal.dim(" [create]"),
+        "CREATE2" => pal.dim(" [create2]"),
+        _ if !call_type.is_empty() => pal.dim(" [call]"),
+        _ => String::new(),
     };
 
     let connector = if prefix.is_empty() {
@@ -320,18 +358,20 @@ fn print_call(
         "├─ "
     };
 
-    println!("{prefix}{connector}[{gas_used}] {call_desc}{call_type_suffix}");
+    let gas_display = pal.dim(&format!("[{gas_used}]"));
+    println!("{prefix}{connector}{gas_display} {call_desc}{call_type_suffix}");
 
     if let Some(err) = &node.error {
         let reason = node
             .output
             .as_deref()
             .and_then(abi_decoder::decode_revert_reason);
-        if let Some(reason) = reason {
-            println!("{prefix}    ↳ error: {err} — {reason}");
+        let err_msg = if let Some(reason) = reason {
+            pal.red(&format!("↳ error: {err} — {reason}"))
         } else {
-            println!("{prefix}    ↳ error: {err}");
-        }
+            pal.red(&format!("↳ error: {err}"))
+        };
+        println!("{prefix}    {err_msg}");
     }
 
     let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
@@ -344,7 +384,7 @@ fn print_call(
     if include_logs {
         for log in &node.logs {
             let is_last_item = item_idx == total_items - 1;
-            print_log(log, &child_prefix, is_last_item, resolver);
+            print_log(log, &child_prefix, is_last_item, resolver, pal);
             item_idx += 1;
         }
     }
@@ -353,23 +393,23 @@ fn print_call(
 
     if let Some(args) = decoded {
         if !args.is_empty() {
-            println!("{meta_prefix}args:");
+            println!("{meta_prefix}{}", pal.dim("args:"));
 
             if args.len() == 1 {
                 if let (DynSolType::Tuple(inner_types), DynSolValue::Tuple(inner_values)) = &args[0]
                 {
                     let len = inner_types.len().min(inner_values.len());
                     for i in 0..len {
-                        print_arg(meta_prefix, 0, i, &inner_types[i], &inner_values[i]);
+                        print_arg(meta_prefix, 0, i, &inner_types[i], &inner_values[i], pal);
                     }
                 } else {
                     for (i, (ty, value)) in args.iter().enumerate() {
-                        print_arg(meta_prefix, 0, i, ty, value);
+                        print_arg(meta_prefix, 0, i, ty, value, pal);
                     }
                 }
             } else {
                 for (i, (ty, value)) in args.iter().enumerate() {
-                    print_arg(meta_prefix, 0, i, ty, value);
+                    print_arg(meta_prefix, 0, i, ty, value, pal);
                 }
             }
         }
@@ -377,8 +417,11 @@ fn print_call(
         if let Some(input) = &node.input {
             let s = input.strip_prefix("0x").unwrap_or(input);
             if s.len() > 8 {
-                println!("{meta_prefix}[unable to decode args - complex or unsupported type]");
-                println!("{meta_prefix}data: {input}");
+                println!(
+                    "{meta_prefix}{}",
+                    pal.dim("[unable to decode args - complex or unsupported type]")
+                );
+                println!("{meta_prefix}{} {input}", pal.dim("data:"));
                 data_printed = true;
             }
         }
@@ -386,7 +429,7 @@ fn print_call(
 
     if include_calldata && !data_printed {
         if let Some(input) = &node.input {
-            println!("{meta_prefix}data: {input}");
+            println!("{meta_prefix}{} {input}", pal.dim("data:"));
         }
     }
 
@@ -400,6 +443,7 @@ fn print_call(
             include_args,
             include_calldata,
             include_logs,
+            pal,
         );
         item_idx += 1;
     }
@@ -410,19 +454,26 @@ fn extract_selector(input: &str) -> Option<String> {
     s.get(..8).map(|sel| format!("0x{sel}"))
 }
 
-fn print_arg(prefix: &str, depth: usize, index: usize, ty: &DynSolType, value: &DynSolValue) {
+fn print_arg(
+    prefix: &str,
+    depth: usize,
+    index: usize,
+    ty: &DynSolType,
+    value: &DynSolValue,
+    pal: Palette,
+) {
     use DynSolType as T;
     use DynSolValue as V;
 
     let indent = "  ".repeat(depth);
-    let type_str = abi_decoder::format_param_type(ty);
+    let type_str = pal.dim(&abi_decoder::format_param_type(ty));
 
     match (ty, value) {
         (T::Tuple(inner_types), V::Tuple(inner_values)) => {
             println!("{prefix}{indent}[{index}] {type_str}");
             let len = inner_types.len().min(inner_values.len());
             for i in 0..len {
-                print_arg(prefix, depth + 1, i, &inner_types[i], &inner_values[i]);
+                print_arg(prefix, depth + 1, i, &inner_types[i], &inner_values[i], pal);
             }
         }
         (
@@ -431,7 +482,7 @@ fn print_arg(prefix: &str, depth: usize, index: usize, ty: &DynSolType, value: &
         ) => {
             println!("{prefix}{indent}[{index}] {type_str}");
             for (i, v) in inner_values.iter().enumerate() {
-                print_arg(prefix, depth + 1, i, inner_ty, v);
+                print_arg(prefix, depth + 1, i, inner_ty, v, pal);
             }
         }
         _ => {

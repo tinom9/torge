@@ -1,4 +1,5 @@
 pub mod abi_decoder;
+pub mod color;
 pub mod disk_cache;
 pub mod event_formatter;
 pub mod hex_utils;

@@ -1,4 +1,4 @@
-use crate::utils::{abi_decoder, hex_utils, selector_resolver::SelectorResolver};
+use crate::utils::{abi_decoder, color::Palette, hex_utils, selector_resolver::SelectorResolver};
 use alloy_dyn_abi::DynSolType;
 use serde::Deserialize;
 
@@ -11,13 +11,22 @@ pub struct Log {
 }
 
 /// Print an event log with the appropriate formatting.
-pub fn print_log(log: &Log, prefix: &str, is_last: bool, resolver: &mut SelectorResolver) {
+pub fn print_log(
+    log: &Log,
+    prefix: &str,
+    is_last: bool,
+    resolver: &mut SelectorResolver,
+    pal: Palette,
+) {
     let connector = if is_last { "└─ " } else { "├─ " };
     let resolve_events = resolver.is_enabled();
 
     if log.topics.is_empty() {
         let data_display = log.data.as_deref().unwrap_or("0x");
-        println!("{prefix}{connector}emit <anonymous>(data: {data_display})");
+        println!(
+            "{prefix}{connector}{} <anonymous>(data: {data_display})",
+            pal.dim("emit")
+        );
         return;
     }
 
@@ -25,7 +34,7 @@ pub fn print_log(log: &Log, prefix: &str, is_last: bool, resolver: &mut Selector
 
     let event_display = if resolve_events {
         if let Some(event_sig) = resolver.resolve_event(topic0) {
-            format_event_with_signature(&event_sig, log)
+            format_event_with_signature(&event_sig, log, pal)
         } else {
             format_event_raw(topic0, log)
         }
@@ -33,15 +42,16 @@ pub fn print_log(log: &Log, prefix: &str, is_last: bool, resolver: &mut Selector
         format_event_raw(topic0, log)
     };
 
-    println!("{prefix}{connector}emit {event_display}");
+    println!("{prefix}{connector}{} {event_display}", pal.dim("emit"));
 }
 
-fn format_event_with_signature(signature: &str, log: &Log) -> String {
+fn format_event_with_signature(signature: &str, log: &Log, pal: Palette) -> String {
     let name = signature.find('(').map_or(signature, |i| &signature[..i]);
+    let colored_name = pal.yellow(name);
 
     let params = decode_event_params(signature, log);
     if params.is_empty() {
-        return format!("{name}()");
+        return format!("{colored_name}()");
     }
 
     let param_strs: Vec<String> = params
@@ -50,7 +60,7 @@ fn format_event_with_signature(signature: &str, log: &Log) -> String {
         .map(|(i, value)| format!("param{i}: {value}"))
         .collect();
 
-    format!("{name}({})", param_strs.join(", "))
+    format!("{colored_name}({})", param_strs.join(", "))
 }
 
 /// Format an unresolved event with full topic0, params, and data.
@@ -250,7 +260,8 @@ mod tests {
             ],
             data: Some("0x000000000000000000000000000000000000000000000000c2c65623ae9b8000".into()),
         };
-        let result = format_event_with_signature("Transfer(address,address,uint256)", &log);
+        let pal = Palette::new(false);
+        let result = format_event_with_signature("Transfer(address,address,uint256)", &log, pal);
         assert_eq!(
             result,
             "Transfer(param0: 0xe3100bb16871d9f53a5bc8a659803811a4d08e59, param1: 0x66a9893cc07d91d95644aedd05d03f95e1dba8af, param2: 14035000000000000000)"
@@ -309,7 +320,9 @@ mod tests {
                     .into(),
             ),
         };
-        let result = format_event_with_signature("Swap(address,address,(int256,int256))", &log);
+        let pal = Palette::new(false);
+        let result =
+            format_event_with_signature("Swap(address,address,(int256,int256))", &log, pal);
         assert!(result.starts_with("Swap("));
         // 3 params total: 2 indexed topics + 1 decoded tuple
         assert!(result.contains("param0:"));
@@ -327,7 +340,8 @@ mod tests {
             ],
             data: None,
         };
-        let result = format_event_with_signature("SomeEvent()", &log);
+        let pal = Palette::new(false);
+        let result = format_event_with_signature("SomeEvent()", &log, pal);
         assert_eq!(result, "SomeEvent()");
     }
 }

@@ -108,7 +108,9 @@ impl DiskCache {
         let after = cache.selectors.len();
 
         let json = serde_json::to_string_pretty(&cache)?;
-        fs::write(&path, json)?;
+        let tmp_path = path.with_extension("json.tmp");
+        fs::write(&tmp_path, json)?;
+        fs::rename(&tmp_path, &path)?;
 
         Ok((after, before - after))
     }
