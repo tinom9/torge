@@ -10,6 +10,12 @@ pub fn parse_hex_u128(s: &str) -> Option<u128> {
     u128::from_str_radix(s, 16).ok()
 }
 
+/// Parse a hex string (with or without 0x prefix) as U256.
+pub fn parse_hex_u256(s: &str) -> Option<alloy_primitives::U256> {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    alloy_primitives::U256::from_str_radix(s, 16).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

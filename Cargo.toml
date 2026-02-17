@@ -21,6 +21,7 @@ thiserror = "1"
 hex = "0.4"
 dirs = "6"
 alloy-dyn-abi = "1.4.1"
+alloy-primitives = "1.4.1"
 toml = "0.9"
 dotenvy = "0.15"
 

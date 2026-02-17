@@ -210,8 +210,8 @@ fn print_call(
     let value = node
         .value
         .as_deref()
-        .and_then(hex_utils::parse_hex_u64)
-        .filter(|&v| v > 0);
+        .and_then(hex_utils::parse_hex_u256)
+        .filter(|v| !v.is_zero());
 
     let mut decoded: Option<Vec<(DynSolType, DynSolValue)>> = None;
     let mut decode_attempted = false;

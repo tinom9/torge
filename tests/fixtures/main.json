@@ -1799,5 +1799,180 @@
     "expected_trace": "pimlico-handleOps.log",
     "expected_trace_logs": "pimlico-handleOps-logs.log",
     "expected_trace_full": "pimlico-handleOps-full.log"
+  },
+  {
+    "name": "beacon::deposit",
+    "tx_hash": "0x1d00f1f8634635d5562d74536181321a608bd7c7fdeeac583c025a20e3fde32c",
+    "rpc_response": {
+      "id": 1,
+      "jsonrpc": "2.0",
+      "result": {
+        "from": "0x1c8d5078d8014c453ce5b74c0a12d7a58ca0a711",
+        "gas": "0x2b1cb",
+        "gasUsed": "0x20e3f",
+        "to": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+        "input": "0xd0e30db0",
+        "calls": [
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1d370",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0xa40fc3bf5defff900e0fbdd608339ab6afa61787e31b66190a8288b9a54ca66c086d4a4a563b2170e8f27503e642da5100000000000000000000000000000000",
+            "output": "0xcae888ddb15c68f190a0a637fdbfe897bb1690d8c3b77f79c9bce7a539baabf8",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1d049",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0x0000000000000000000000000000000000000000000000000000000000000001cae888ddb15c68f190a0a637fdbfe897bb1690d8c3b77f79c9bce7a539baabf8",
+            "output": "0xe12a57e6e9c01584082a0fd9c79b496989c9306c3267d55978a551a0bd933405",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1c1fa",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0xa40fc3bf5defff900e0fbdd608339ab6afa61787e31b66190a8288b9a54ca66c086d4a4a563b2170e8f27503e642da5100000000000000000000000000000000",
+            "output": "0xcae888ddb15c68f190a0a637fdbfe897bb1690d8c3b77f79c9bce7a539baabf8",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1bcfa",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0xb4551ba05084e3b5e73e0749a25fbf81d849762661ee32bdbf45d170cbdc0e1c844576c29079b7301f3ff2897f89504a0e80df8442bac8dcf15330495bab301f",
+            "output": "0xe638e6b58792c930d65998bb7b33d76549aed0bb554192f75021a66ce51c5c4d",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1b708",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0xac649542b5dec750abd6835e800d8082f29546f7985ef7d171955d8bfe11e1c30000000000000000000000000000000000000000000000000000000000000000",
+            "output": "0xac0399e23c35f9b9f3e6575b2640d74b06258c9a0709acbf179bebc06dd1ba94",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1b414",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0xe638e6b58792c930d65998bb7b33d76549aed0bb554192f75021a66ce51c5c4dac0399e23c35f9b9f3e6575b2640d74b06258c9a0709acbf179bebc06dd1ba94",
+            "output": "0x74a44756661bf399371364a739bfc155a075a63cae1b5a7ce2f7c61edf9a5048",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1b0fd",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0xcae888ddb15c68f190a0a637fdbfe897bb1690d8c3b77f79c9bce7a539baabf8010000000000000000000000555e84419738cb8d7b325249ebfe9e9a8f3bf08a",
+            "output": "0x780ebb008e2d82a38d2b2c8501e232c3576a0708e791c64b11e70fa17a67642a",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1ae01",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0x004059730700000000000000000000000000000000000000000000000000000074a44756661bf399371364a739bfc155a075a63cae1b5a7ce2f7c61edf9a5048",
+            "output": "0xf853849c1bb03133f58c4688e280edf416a9ebfe8493bb426fa62974f88f20f1",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x1ab0e",
+            "gasUsed": "0x54",
+            "to": "0x0000000000000000000000000000000000000002",
+            "input": "0x780ebb008e2d82a38d2b2c8501e232c3576a0708e791c64b11e70fa17a67642af853849c1bb03133f58c4688e280edf416a9ebfe8493bb426fa62974f88f20f1",
+            "output": "0xc9db10a107f876c58edc732fb9bd1ed5e3c6318d690526b4403f4a5466da9281",
+            "type": "STATICCALL"
+          },
+          {
+            "from": "0xdc71affc862fceb6ad32be58e098423a7727bebd",
+            "gas": "0x17821",
+            "gasUsed": "0x6306",
+            "to": "0x00000000219ab540356cbb839cbe05303d7705fa",
+            "input": "0x22895118000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000120c9db10a107f876c58edc732fb9bd1ed5e3c6318d690526b4403f4a5466da92810000000000000000000000000000000000000000000000000000000000000030a40fc3bf5defff900e0fbdd608339ab6afa61787e31b66190a8288b9a54ca66c086d4a4a563b2170e8f27503e642da51000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020010000000000000000000000555e84419738cb8d7b325249ebfe9e9a8f3bf08a0000000000000000000000000000000000000000000000000000000000000060b4551ba05084e3b5e73e0749a25fbf81d849762661ee32bdbf45d170cbdc0e1c844576c29079b7301f3ff2897f89504a0e80df8442bac8dcf15330495bab301fac649542b5dec750abd6835e800d8082f29546f7985ef7d171955d8bfe11e1c3",
+            "calls": [
+              {
+                "from": "0x00000000219ab540356cbb839cbe05303d7705fa",
+                "gas": "0x144e1",
+                "gasUsed": "0x54",
+                "to": "0x0000000000000000000000000000000000000002",
+                "input": "0xa40fc3bf5defff900e0fbdd608339ab6afa61787e31b66190a8288b9a54ca66c086d4a4a563b2170e8f27503e642da5100000000000000000000000000000000",
+                "output": "0xcae888ddb15c68f190a0a637fdbfe897bb1690d8c3b77f79c9bce7a539baabf8",
+                "type": "STATICCALL"
+              },
+              {
+                "from": "0x00000000219ab540356cbb839cbe05303d7705fa",
+                "gas": "0x1417c",
+                "gasUsed": "0x54",
+                "to": "0x0000000000000000000000000000000000000002",
+                "input": "0xb4551ba05084e3b5e73e0749a25fbf81d849762661ee32bdbf45d170cbdc0e1c844576c29079b7301f3ff2897f89504a0e80df8442bac8dcf15330495bab301f",
+                "output": "0xe638e6b58792c930d65998bb7b33d76549aed0bb554192f75021a66ce51c5c4d",
+                "type": "STATICCALL"
+              },
+              {
+                "from": "0x00000000219ab540356cbb839cbe05303d7705fa",
+                "gas": "0x13e0e",
+                "gasUsed": "0x54",
+                "to": "0x0000000000000000000000000000000000000002",
+                "input": "0xac649542b5dec750abd6835e800d8082f29546f7985ef7d171955d8bfe11e1c30000000000000000000000000000000000000000000000000000000000000000",
+                "output": "0xac0399e23c35f9b9f3e6575b2640d74b06258c9a0709acbf179bebc06dd1ba94",
+                "type": "STATICCALL"
+              },
+              {
+                "from": "0x00000000219ab540356cbb839cbe05303d7705fa",
+                "gas": "0x13b2b",
+                "gasUsed": "0x54",
+                "to": "0x0000000000000000000000000000000000000002",
+                "input": "0xe638e6b58792c930d65998bb7b33d76549aed0bb554192f75021a66ce51c5c4dac0399e23c35f9b9f3e6575b2640d74b06258c9a0709acbf179bebc06dd1ba94",
+                "output": "0x74a44756661bf399371364a739bfc155a075a63cae1b5a7ce2f7c61edf9a5048",
+                "type": "STATICCALL"
+              },
+              {
+                "from": "0x00000000219ab540356cbb839cbe05303d7705fa",
+                "gas": "0x13814",
+                "gasUsed": "0x54",
+                "to": "0x0000000000000000000000000000000000000002",
+                "input": "0xcae888ddb15c68f190a0a637fdbfe897bb1690d8c3b77f79c9bce7a539baabf8010000000000000000000000555e84419738cb8d7b325249ebfe9e9a8f3bf08a",
+                "output": "0x780ebb008e2d82a38d2b2c8501e232c3576a0708e791c64b11e70fa17a67642a",
+                "type": "STATICCALL"
+              },
+              {
+                "from": "0x00000000219ab540356cbb839cbe05303d7705fa",
+                "gas": "0x13447",
+                "gasUsed": "0x54",
+                "to": "0x0000000000000000000000000000000000000002",
+                "input": "0x004059730700000000000000000000000000000000000000000000000000000074a44756661bf399371364a739bfc155a075a63cae1b5a7ce2f7c61edf9a5048",
+                "output": "0xf853849c1bb03133f58c4688e280edf416a9ebfe8493bb426fa62974f88f20f1",
+                "type": "STATICCALL"
+              },
+              {
+                "from": "0x00000000219ab540356cbb839cbe05303d7705fa",
+                "gas": "0x1315a",
+                "gasUsed": "0x54",
+                "to": "0x0000000000000000000000000000000000000002",
+                "input": "0x780ebb008e2d82a38d2b2c8501e232c3576a0708e791c64b11e70fa17a67642af853849c1bb03133f58c4688e280edf416a9ebfe8493bb426fa62974f88f20f1",
+                "output": "0xc9db10a107f876c58edc732fb9bd1ed5e3c6318d690526b4403f4a5466da9281",
+                "type": "STATICCALL"
+              }
+            ],
+            "value": "0x1bc16d674ec800000",
+            "type": "CALL"
+          }
+        ],
+        "value": "0x1bc16d674ec800000",
+        "type": "CALL"
+      }
+    },
+    "expected_trace": "beacon-deposit.log"
   }
 ]
