@@ -1,4 +1,4 @@
-use crate::utils::disk_cache::DiskCache;
+use crate::utils::disk_cache::{CacheError, DiskCache};
 use clap::Parser;
 use std::fs;
 use thiserror::Error;
@@ -12,17 +12,18 @@ pub struct CleanArgs {
 
 #[derive(Debug, Error)]
 pub enum CleanError {
+    #[error("{0}")]
+    Cache(#[from] CacheError),
+
     #[error("io error: {0}")]
-    Io(String),
+    Io(#[from] std::io::Error),
 }
 
+#[allow(clippy::needless_pass_by_value)] // clap produces owned values
 pub fn run(args: CleanArgs) -> Result<(), CleanError> {
-    let path = match DiskCache::cache_path() {
-        Some(p) => p,
-        None => {
-            println!("could not determine cache directory");
-            return Ok(());
-        }
+    let Some(path) = DiskCache::cache_path() else {
+        println!("could not determine cache directory");
+        return Ok(());
     };
 
     if !path.exists() {
@@ -31,15 +32,13 @@ pub fn run(args: CleanArgs) -> Result<(), CleanError> {
     }
 
     if args.only_unknown {
-        let (kept, removed) = DiskCache::remove_unknown()
-            .map_err(|e| CleanError::Io(format!("failed to clean unknown entries: {e}")))?;
+        let (kept, removed) = DiskCache::remove_unknown()?;
         println!(
             "removed {removed} unknown selector(s), kept {kept} — {}",
             path.display()
         );
     } else {
-        fs::remove_file(&path)
-            .map_err(|e| CleanError::Io(format!("failed to remove cache file: {e}")))?;
+        fs::remove_file(&path)?;
         println!("cache cleared: {}", path.display());
     }
 

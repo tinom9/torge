@@ -1,5 +1,4 @@
 use super::trace::{self, TraceError, TraceOpts};
-use crate::utils::selector_resolver::SelectorResolver;
 use clap::Parser;
 use serde_json::json;
 
@@ -13,12 +12,13 @@ pub struct TxArgs {
 }
 
 pub fn run(args: TxArgs) -> Result<(), TraceError> {
-    if args.opts.include_args && !args.opts.resolve_selectors {
-        return Err(TraceError::IncludeArgsRequiresResolveSelectors);
+    trace::validate_hex(&args.tx_hash, "tx_hash")?;
+    if args.tx_hash.len() != 66 {
+        return Err(TraceError::InvalidInput(format!(
+            "tx_hash: expected 64 hex chars, got {}",
+            args.tx_hash.len() - 2
+        )));
     }
-
-    let rpc_url = trace::resolve_rpc_url(args.opts.rpc_url)?;
-    let client = trace::create_client()?;
 
     let payload = json!({
         "jsonrpc": "2.0",
@@ -36,22 +36,5 @@ pub fn run(args: TxArgs) -> Result<(), TraceError> {
         ]
     });
 
-    let resp = client
-        .post(&rpc_url)
-        .json(&payload)
-        .send()?
-        .error_for_status()?;
-
-    let call_trace = trace::parse_rpc_response(resp)?;
-
-    let mut resolver = SelectorResolver::new(&client, args.opts.resolve_selectors);
-    trace::print_trace(
-        &call_trace,
-        &mut resolver,
-        args.opts.include_args,
-        args.opts.include_calldata,
-        args.opts.include_logs,
-    );
-
-    Ok(())
+    trace::execute_and_print(&payload, args.opts)
 }

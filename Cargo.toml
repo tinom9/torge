@@ -17,7 +17,7 @@ clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = "1"
+thiserror = "2"
 hex = "0.4"
 dirs = "6"
 alloy-dyn-abi = "1.4.1"
@@ -29,5 +29,4 @@ dotenvy = "0.15"
 assert_cmd = "2"
 mockito = "1"
 predicates = "3"
-serial_test = "3"
 tempfile = "3"

@@ -7,19 +7,8 @@ pub fn decode_precompile_args(
     signature: &str,
     input: &str,
 ) -> Option<Vec<(DynSolType, DynSolValue)>> {
-    let s = input.strip_prefix("0x").unwrap_or(input);
-    let args_bytes = hex::decode(s).ok()?;
-
-    let start = signature.find('(')?;
-    let params_str = signature.get(start..)?;
-    let param_type: DynSolType = params_str.parse().ok()?;
-
-    if matches!(param_type, DynSolType::Tuple(ref v) if v.is_empty()) && args_bytes.is_empty() {
-        return Some(Vec::new());
-    }
-
-    let decoded = param_type.abi_decode_params(&args_bytes).ok()?;
-    Some(split_types_and_values(param_type, decoded))
+    let hex = input.strip_prefix("0x").unwrap_or(input);
+    decode_args(signature, hex)
 }
 
 /// Decode ABI tokens given a text signature and full calldata hex, paired with
@@ -28,23 +17,24 @@ pub fn decode_function_args(
     signature: &str,
     input: &str,
 ) -> Option<Vec<(DynSolType, DynSolValue)>> {
-    let s = input.strip_prefix("0x").unwrap_or(input);
-    if s.len() < 8 {
-        return None;
-    }
+    let hex = input.strip_prefix("0x").unwrap_or(input);
+    hex.get(8..)
+        .and_then(|args_hex| decode_args(signature, args_hex))
+}
 
-    let args_hex = &s[8..];
-    let args_bytes = hex::decode(args_hex).ok()?;
+/// Shared ABI decoding: parse signature, decode bytes, split into typed pairs.
+fn decode_args(signature: &str, hex_data: &str) -> Option<Vec<(DynSolType, DynSolValue)>> {
+    let bytes = hex::decode(hex_data).ok()?;
 
     let start = signature.find('(')?;
     let params_str = signature.get(start..)?;
     let param_type: DynSolType = params_str.parse().ok()?;
 
-    if matches!(param_type, DynSolType::Tuple(ref v) if v.is_empty()) && args_bytes.is_empty() {
+    if matches!(param_type, DynSolType::Tuple(ref v) if v.is_empty()) && bytes.is_empty() {
         return Some(Vec::new());
     }
 
-    let decoded = param_type.abi_decode_params(&args_bytes).ok()?;
+    let decoded = param_type.abi_decode_params(&bytes).ok()?;
     Some(split_types_and_values(param_type, decoded))
 }
 
@@ -56,9 +46,8 @@ pub fn can_decode(signature: &str, calldata: &str) -> bool {
     }
 
     let args_hex = &s[8..];
-    let args_bytes = match hex::decode(args_hex) {
-        Ok(b) => b,
-        Err(_) => return false,
+    let Ok(args_bytes) = hex::decode(args_hex) else {
+        return false;
     };
 
     let Some(start) = signature.find('(') else {
@@ -78,7 +67,7 @@ pub fn can_decode(signature: &str, calldata: &str) -> bool {
     param_type.abi_decode_params(&args_bytes).is_ok()
 }
 
-/// Split a decoded DynSolValue into (type, value) pairs for each parameter.
+/// Split a decoded `DynSolValue` into (type, value) pairs for each parameter.
 fn split_types_and_values(
     param_type: DynSolType,
     value: DynSolValue,
@@ -95,26 +84,20 @@ fn split_types_and_values(
 }
 
 pub fn format_param_type(kind: &DynSolType) -> String {
-    use DynSolType::*;
-
     match kind {
-        Address => "address".to_owned(),
-        Bool => "bool".to_owned(),
-        Uint(n) => format!("uint{n}"),
-        Int(n) => format!("int{n}"),
-        Bytes => "bytes".to_owned(),
-        FixedBytes(n) => format!("bytes{n}"),
-        String => "string".to_owned(),
-        Function => "function".to_owned(),
-        Array(inner) => format!("{}[]", format_param_type(inner)),
-        FixedArray(inner, n) => format!("{}[{n}]", format_param_type(inner)),
-        Tuple(inner) => {
-            let inner = inner
-                .iter()
-                .map(format_param_type)
-                .collect::<Vec<_>>()
-                .join(",");
-            format!("({inner})")
+        DynSolType::Address => "address".to_owned(),
+        DynSolType::Bool => "bool".to_owned(),
+        DynSolType::Uint(n) => format!("uint{n}"),
+        DynSolType::Int(n) => format!("int{n}"),
+        DynSolType::Bytes => "bytes".to_owned(),
+        DynSolType::FixedBytes(n) => format!("bytes{n}"),
+        DynSolType::String => "string".to_owned(),
+        DynSolType::Function => "function".to_owned(),
+        DynSolType::Array(inner) => format!("{}[]", format_param_type(inner)),
+        DynSolType::FixedArray(inner, n) => format!("{}[{n}]", format_param_type(inner)),
+        DynSolType::Tuple(inner) => {
+            let parts: Vec<_> = inner.iter().map(format_param_type).collect();
+            format!("({})", parts.join(","))
         }
         #[allow(unreachable_patterns)]
         _ => kind.to_string(),
@@ -122,33 +105,23 @@ pub fn format_param_type(kind: &DynSolType) -> String {
 }
 
 pub fn format_value(value: &DynSolValue) -> String {
-    use DynSolValue::*;
-
     match value {
-        Address(a) => format!("{a:#x}"),
-        Uint(u, _) => format!("{u}"),
-        Int(i, _) => format!("{i}"),
-        Bool(b) => b.to_string(),
-        String(s) => s.to_string(),
-        Bytes(b) => format!("0x{}", hex::encode(b)),
-        FixedBytes(b, _) => format!("0x{}", hex::encode(b)),
-        Array(inner) | FixedArray(inner) => {
-            let inner = inner
-                .iter()
-                .map(format_value)
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("[{inner}]")
+        DynSolValue::Address(a) => format!("{a:#x}"),
+        DynSolValue::Uint(u, _) => format!("{u}"),
+        DynSolValue::Int(i, _) => format!("{i}"),
+        DynSolValue::Bool(b) => b.to_string(),
+        DynSolValue::String(s) => s.clone(),
+        DynSolValue::Bytes(b) => format!("0x{}", hex::encode(b)),
+        DynSolValue::FixedBytes(b, _) => format!("0x{}", hex::encode(b)),
+        DynSolValue::Array(inner) | DynSolValue::FixedArray(inner) => {
+            let parts: Vec<_> = inner.iter().map(format_value).collect();
+            format!("[{}]", parts.join(", "))
         }
-        Tuple(inner) => {
-            let inner = inner
-                .iter()
-                .map(format_value)
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("({inner})")
+        DynSolValue::Tuple(inner) => {
+            let parts: Vec<_> = inner.iter().map(format_value).collect();
+            format!("({})", parts.join(", "))
         }
-        _ => format!("{value:?}"),
+        DynSolValue::Function(_) => format!("{value:?}"),
     }
 }
 

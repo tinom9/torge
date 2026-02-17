@@ -20,16 +20,6 @@ enum TestMode {
     Full,
 }
 
-impl TestMode {
-    fn name(&self) -> &'static str {
-        match self {
-            TestMode::Basic => "basic",
-            TestMode::Logs => "logs",
-            TestMode::Full => "full",
-        }
-    }
-}
-
 fn load_selectors() -> HashMap<String, String> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/selectors.json");
     let content = std::fs::read_to_string(path).expect("Failed to read selectors.json");

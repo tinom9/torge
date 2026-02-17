@@ -5,8 +5,6 @@ use serde::Deserialize;
 /// A log entry (event) emitted during execution.
 #[derive(Debug, Deserialize)]
 pub struct Log {
-    #[allow(dead_code)]
-    pub address: Option<String>,
     #[serde(default)]
     pub topics: Vec<String>,
     pub data: Option<String>,
@@ -39,10 +37,7 @@ pub fn print_log(log: &Log, prefix: &str, is_last: bool, resolver: &mut Selector
 }
 
 fn format_event_with_signature(signature: &str, log: &Log) -> String {
-    let name = signature
-        .find('(')
-        .map(|i| &signature[..i])
-        .unwrap_or(signature);
+    let name = signature.find('(').map_or(signature, |i| &signature[..i]);
 
     let params = decode_event_params(signature, log);
     if params.is_empty() {
@@ -117,7 +112,7 @@ fn decode_event_data(signature: &str, data: &str, indexed_count: usize) -> Optio
         return Some(Vec::new());
     }
 
-    let param_types: Vec<&str> = params_str.split(',').collect();
+    let param_types = split_params(params_str);
     if indexed_count >= param_types.len() {
         return Some(Vec::new());
     }
@@ -135,17 +130,43 @@ fn decode_event_data(signature: &str, data: &str, indexed_count: usize) -> Optio
     Some(format_decoded_values(&decoded))
 }
 
+/// Split a comma-separated parameter list respecting nested parentheses.
+///
+/// `"address,address,(int256,int256)"` → `["address", "address", "(int256,int256)"]`
+fn split_params(s: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut depth = 0;
+    let mut start = 0;
+
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                result.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+
+    if start <= s.len() {
+        let tail = &s[start..];
+        if !tail.is_empty() {
+            result.push(tail);
+        }
+    }
+
+    result
+}
+
 fn format_decoded_values(value: &alloy_dyn_abi::DynSolValue) -> Vec<String> {
     use alloy_dyn_abi::DynSolValue;
 
     match value {
-        DynSolValue::Tuple(values) => values.iter().map(format_single_value).collect(),
-        _ => vec![format_single_value(value)],
+        DynSolValue::Tuple(values) => values.iter().map(abi_decoder::format_value).collect(),
+        _ => vec![abi_decoder::format_value(value)],
     }
-}
-
-fn format_single_value(value: &alloy_dyn_abi::DynSolValue) -> String {
-    abi_decoder::format_value(value)
 }
 
 /// Format a topic value (bytes32) as a readable value.
@@ -205,7 +226,6 @@ mod tests {
     #[test]
     fn test_format_event_raw() {
         let log = Log {
-            address: None,
             topics: vec![
                 "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef".into(),
                 "0x000000000000000000000000e3100bb16871d9f53a5bc8a659803811a4d08e59".into(),
@@ -223,7 +243,6 @@ mod tests {
     #[test]
     fn test_format_event_with_signature() {
         let log = Log {
-            address: None,
             topics: vec![
                 "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef".into(),
                 "0x000000000000000000000000e3100bb16871d9f53a5bc8a659803811a4d08e59".into(),
@@ -239,9 +258,70 @@ mod tests {
     }
 
     #[test]
+    fn test_split_params_simple() {
+        assert_eq!(
+            split_params("address,address,uint256"),
+            vec!["address", "address", "uint256"]
+        );
+    }
+
+    #[test]
+    fn test_split_params_tuple() {
+        assert_eq!(
+            split_params("address,(int256,int256)"),
+            vec!["address", "(int256,int256)"]
+        );
+    }
+
+    #[test]
+    fn test_split_params_nested() {
+        assert_eq!(
+            split_params("address,((uint160,int24),uint256)"),
+            vec!["address", "((uint160,int24),uint256)"]
+        );
+    }
+
+    #[test]
+    fn test_split_params_empty() {
+        let result: Vec<&str> = split_params("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_split_params_single() {
+        assert_eq!(split_params("uint256"), vec!["uint256"]);
+    }
+
+    #[test]
+    fn test_format_event_with_tuple_param() {
+        // Simulates: event Swap(address indexed sender, address indexed recipient, (int256 amount0, int256 amount1))
+        // topic0 = keccak256, topic1 = sender, topic2 = recipient, data = tuple(int256, int256)
+        let log = Log {
+            topics: vec![
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".into(),
+                "0x000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564".into(),
+                "0x000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564".into(),
+            ],
+            // ABI-encoded (int256(-1000), int256(2000))
+            data: Some(
+                "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc18\
+                         00000000000000000000000000000000000000000000000000000000000007d0"
+                    .into(),
+            ),
+        };
+        let result = format_event_with_signature("Swap(address,address,(int256,int256))", &log);
+        assert!(result.starts_with("Swap("));
+        // 3 params total: 2 indexed topics + 1 decoded tuple
+        assert!(result.contains("param0:"));
+        assert!(result.contains("param1:"));
+        assert!(result.contains("param2:"));
+        // The tuple is a single param, so no param3
+        assert!(!result.contains("param3:"));
+    }
+
+    #[test]
     fn test_format_event_with_signature_no_params() {
         let log = Log {
-            address: None,
             topics: vec![
                 "0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c".into(),
             ],

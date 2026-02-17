@@ -13,11 +13,12 @@ use thiserror::Error;
 
 /// Common trace output options shared by `tx` and `call`.
 #[derive(Parser, Debug)]
+#[allow(clippy::struct_excessive_bools)] // CLI flags are naturally boolean
 pub struct TraceOpts {
-    /// Ethereum JSON-RPC URL or Foundry alias (e.g. http://localhost:8545 or ethereum).
+    /// Ethereum JSON-RPC URL or Foundry alias (e.g. `http://localhost:8545` or `ethereum`).
     ///
-    /// If a URL is provided (starts with http:// or https://), it will be used directly.
-    /// Otherwise, the tool will look for a matching alias in foundry.toml's [rpc_endpoints].
+    /// If a URL is provided (starts with `http://` or `https://`), it will be used directly.
+    /// Otherwise, the tool will look for a matching alias in foundry.toml's [`rpc_endpoints`].
     /// If not provided, will read from the `RPC_URL` or `ETH_RPC_URL` environment variables.
     #[arg(short, long)]
     pub rpc_url: Option<String>,
@@ -45,6 +46,10 @@ pub struct TraceOpts {
     /// With `--resolve-selectors`, resolves event names and decodes parameters.
     #[arg(long)]
     pub include_logs: bool,
+
+    /// Disable system proxy for RPC requests.
+    #[arg(long)]
+    pub no_proxy: bool,
 }
 
 #[derive(Debug, Error)]
@@ -69,6 +74,9 @@ pub enum TraceError {
 
     #[error("invalid value: {0}")]
     InvalidValue(String),
+
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,11 +109,12 @@ pub struct CallTrace {
 }
 
 /// Create a pre-configured HTTP client for RPC calls.
-pub fn create_client() -> Result<Client, TraceError> {
-    Ok(Client::builder()
-        .timeout(Duration::from_secs(60))
-        .no_proxy()
-        .build()?)
+fn create_client(no_proxy: bool) -> Result<Client, TraceError> {
+    let mut builder = Client::builder().timeout(Duration::from_secs(60));
+    if no_proxy {
+        builder = builder.no_proxy();
+    }
+    Ok(builder.build()?)
 }
 
 /// Resolve RPC URL from an optional user-provided value or env vars.
@@ -118,8 +127,65 @@ pub fn resolve_rpc_url(url_or_alias: Option<String>) -> Result<String, TraceErro
     }
 }
 
+/// Validate that a string is a 0x-prefixed Ethereum address (40 hex chars).
+pub fn validate_address(addr: &str, field: &str) -> Result<(), TraceError> {
+    let hex = addr
+        .strip_prefix("0x")
+        .ok_or_else(|| TraceError::InvalidInput(format!("{field}: missing 0x prefix")))?;
+    if hex.len() != 40 {
+        return Err(TraceError::InvalidInput(format!(
+            "{field}: expected 40 hex chars, got {}",
+            hex.len()
+        )));
+    }
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(TraceError::InvalidInput(format!(
+            "{field}: invalid hex characters"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate that a string is 0x-prefixed hex data.
+pub fn validate_hex(data: &str, field: &str) -> Result<(), TraceError> {
+    let hex = data
+        .strip_prefix("0x")
+        .ok_or_else(|| TraceError::InvalidInput(format!("{field}: missing 0x prefix")))?;
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(TraceError::InvalidInput(format!(
+            "{field}: invalid hex characters"
+        )));
+    }
+    Ok(())
+}
+
+/// Send an RPC payload, parse the trace response, and print it.
+pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result<(), TraceError> {
+    if opts.include_args && !opts.resolve_selectors {
+        return Err(TraceError::IncludeArgsRequiresResolveSelectors);
+    }
+
+    let rpc_url = resolve_rpc_url(opts.rpc_url)?;
+    let client = create_client(opts.no_proxy)?;
+
+    let resp = client.post(&rpc_url).json(payload).send()?;
+
+    let call_trace = parse_rpc_response(resp)?;
+
+    let mut resolver = SelectorResolver::new(client, opts.resolve_selectors);
+    print_trace(
+        &call_trace,
+        &mut resolver,
+        opts.include_args,
+        opts.include_calldata,
+        opts.include_logs,
+    );
+
+    Ok(())
+}
+
 /// Parse the RPC response, returning the result or an error.
-pub fn parse_rpc_response(resp: reqwest::blocking::Response) -> Result<CallTrace, TraceError> {
+fn parse_rpc_response(resp: reqwest::blocking::Response) -> Result<CallTrace, TraceError> {
     let rpc_resp: RpcResponse<CallTrace> = resp.json()?;
 
     if let Some(err) = rpc_resp.error {
@@ -131,7 +197,7 @@ pub fn parse_rpc_response(resp: reqwest::blocking::Response) -> Result<CallTrace
         .ok_or_else(|| TraceError::Decode("missing result field in RPC response".into()))
 }
 
-pub fn print_trace(
+fn print_trace(
     root: &CallTrace,
     resolver: &mut SelectorResolver,
     include_args: bool,
@@ -150,6 +216,7 @@ pub fn print_trace(
     );
 }
 
+#[allow(clippy::too_many_lines, clippy::fn_params_excessive_bools)]
 fn print_call(
     node: &CallTrace,
     prefix: &str,
@@ -335,11 +402,11 @@ fn extract_selector(input: &str) -> Option<String> {
 }
 
 fn print_arg(prefix: &str, depth: usize, index: usize, ty: &DynSolType, value: &DynSolValue) {
-    let indent = "  ".repeat(depth);
-    let type_str = abi_decoder::format_param_type(ty);
-
     use DynSolType as T;
     use DynSolValue as V;
+
+    let indent = "  ".repeat(depth);
+    let type_str = abi_decoder::format_param_type(ty);
 
     match (ty, value) {
         (T::Tuple(inner_types), V::Tuple(inner_values)) => {
@@ -349,10 +416,10 @@ fn print_arg(prefix: &str, depth: usize, index: usize, ty: &DynSolType, value: &
                 print_arg(prefix, depth + 1, i, &inner_types[i], &inner_values[i]);
             }
         }
-        (T::Array(inner_ty), V::Array(inner_values))
-        | (T::Array(inner_ty), V::FixedArray(inner_values))
-        | (T::FixedArray(inner_ty, _), V::Array(inner_values))
-        | (T::FixedArray(inner_ty, _), V::FixedArray(inner_values)) => {
+        (
+            T::Array(inner_ty) | T::FixedArray(inner_ty, _),
+            V::Array(inner_values) | V::FixedArray(inner_values),
+        ) => {
             println!("{prefix}{indent}[{index}] {type_str}");
             for (i, v) in inner_values.iter().enumerate() {
                 print_arg(prefix, depth + 1, i, inner_ty, v);
@@ -382,5 +449,22 @@ mod tests {
             Some("0xa9059cbb".to_string())
         );
         assert_eq!(extract_selector("0x123"), None);
+    }
+
+    #[test]
+    fn test_validate_address() {
+        assert!(validate_address("0xdAC17F958D2ee523a2206206994597C13D831ec7", "to").is_ok());
+        assert!(validate_address("0x0000000000000000000000000000000000000000", "to").is_ok());
+        assert!(validate_address("dAC17F958D2ee523a2206206994597C13D831ec7", "to").is_err());
+        assert!(validate_address("0x1234", "to").is_err());
+        assert!(validate_address("0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", "to").is_err());
+    }
+
+    #[test]
+    fn test_validate_hex() {
+        assert!(validate_hex("0xa9059cbb", "data").is_ok());
+        assert!(validate_hex("0x", "data").is_ok());
+        assert!(validate_hex("a9059cbb", "data").is_err());
+        assert!(validate_hex("0xGGGG", "data").is_err());
     }
 }

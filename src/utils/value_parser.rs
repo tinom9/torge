@@ -43,6 +43,7 @@ fn to_wei(num_str: &str, decimals: u32) -> Result<U256, String> {
             if frac.len() > decimals as usize {
                 return Err(format!("too many decimal places: {num_str}"));
             }
+            #[allow(clippy::cast_possible_truncation)] // frac.len() <= 18 (validated above)
             (format!("{}{frac}", &num_str[..dot]), frac.len() as u32)
         }
         None => (num_str.to_string(), 0),

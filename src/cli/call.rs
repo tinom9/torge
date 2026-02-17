@@ -1,5 +1,5 @@
 use super::trace::{self, TraceError, TraceOpts};
-use crate::utils::{selector_resolver::SelectorResolver, value_parser};
+use crate::utils::value_parser;
 use clap::Parser;
 use serde_json::json;
 
@@ -31,12 +31,14 @@ pub struct CallArgs {
 }
 
 pub fn run(args: CallArgs) -> Result<(), TraceError> {
-    if args.opts.include_args && !args.opts.resolve_selectors {
-        return Err(TraceError::IncludeArgsRequiresResolveSelectors);
+    trace::validate_address(&args.to, "--to")?;
+    trace::validate_hex(&args.data, "--data")?;
+    if let Some(from) = &args.from {
+        trace::validate_address(from, "--from")?;
     }
-
-    let rpc_url = trace::resolve_rpc_url(args.opts.rpc_url)?;
-    let client = trace::create_client()?;
+    if let Some(gas) = &args.gas_limit {
+        trace::validate_hex(gas, "--gas-limit")?;
+    }
 
     let mut tx_object = json!({
         "to": args.to,
@@ -71,22 +73,5 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
         ]
     });
 
-    let resp = client
-        .post(&rpc_url)
-        .json(&payload)
-        .send()?
-        .error_for_status()?;
-
-    let call_trace = trace::parse_rpc_response(resp)?;
-
-    let mut resolver = SelectorResolver::new(&client, args.opts.resolve_selectors);
-    trace::print_trace(
-        &call_trace,
-        &mut resolver,
-        args.opts.include_args,
-        args.opts.include_calldata,
-        args.opts.include_logs,
-    );
-
-    Ok(())
+    trace::execute_and_print(&payload, args.opts)
 }

@@ -7,7 +7,7 @@ const VAR_END: char = '}';
 
 #[derive(Debug, Error)]
 pub enum RpcUrlError {
-    #[error("rpc alias '{0}' not found in {}", FOUNDRY_CONFIG)]
+    #[error("rpc alias '{0}' not found in foundry.toml")]
     AliasNotFound(String),
 
     #[error("invalid RPC URL '{url}' resolved from alias '{alias}'\n  resolved to: {resolved}\n  hint: {hint}")]
@@ -62,6 +62,11 @@ fn resolve_alias(alias: &str) -> Result<String, RpcUrlError> {
 
 /// Substitute environment variables in a string using the format `${VAR_NAME}`.
 fn substitute_env_vars(s: &str) -> String {
+    substitute_vars(s, |name| env::var(name).ok())
+}
+
+/// Core variable substitution logic, parameterized by a resolver function.
+fn substitute_vars(s: &str, resolve_var: impl Fn(&str) -> Option<String>) -> String {
     let mut result = s.to_string();
     let var_start_len = VAR_START.len();
 
@@ -71,14 +76,19 @@ fn substitute_env_vars(s: &str) -> String {
         };
 
         let var_name = &result[start + var_start_len..start + end_offset];
-        let replacement = env::var(var_name).unwrap_or_default();
-        result.replace_range(start..start + end_offset + 1, &replacement);
+        let replacement = resolve_var(var_name).unwrap_or_default();
+        result.replace_range(start..=start + end_offset, &replacement);
     }
     result
 }
 
 /// Find unresolved environment variables in a string.
 fn find_unresolved_vars(s: &str) -> Vec<String> {
+    find_vars(s, |name| env::var(name).is_err())
+}
+
+/// Core unresolved-variable detection, parameterized by a predicate.
+fn find_vars(s: &str, is_unresolved: impl Fn(&str) -> bool) -> Vec<String> {
     let var_start_len = VAR_START.len();
     let mut vars = Vec::new();
     let mut pos = 0;
@@ -90,7 +100,7 @@ fn find_unresolved_vars(s: &str) -> Vec<String> {
         };
 
         let var_name = &s[start + var_start_len..start + end_offset];
-        if env::var(var_name).is_err() {
+        if is_unresolved(var_name) {
             vars.push(var_name.to_string());
         }
         pos = start + end_offset + 1;
@@ -151,7 +161,7 @@ fn get_raw_url_from_foundry(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
+    use std::collections::HashMap;
 
     #[test]
     fn test_is_url() {
@@ -163,55 +173,51 @@ mod tests {
     }
 
     #[test]
-    #[serial]
-    fn test_substitute_env_vars() {
-        env::set_var("TEST_VAR", "test_value");
-        env::set_var("ANOTHER_VAR", "another_value");
+    fn test_substitute_vars() {
+        let vars: HashMap<&str, &str> =
+            [("TEST_VAR", "test_value"), ("ANOTHER_VAR", "another_value")].into();
+        let resolve = |name: &str| vars.get(name).map(|v| v.to_string());
 
         assert_eq!(
-            substitute_env_vars("http://${TEST_VAR}/api"),
+            substitute_vars("http://${TEST_VAR}/api", &resolve),
             "http://test_value/api"
         );
         assert_eq!(
-            substitute_env_vars("${TEST_VAR}:${ANOTHER_VAR}"),
+            substitute_vars("${TEST_VAR}:${ANOTHER_VAR}", &resolve),
             "test_value:another_value"
         );
-        assert_eq!(substitute_env_vars("no_vars_here"), "no_vars_here");
-        assert_eq!(substitute_env_vars("${NONEXISTENT_VAR}"), "");
-
-        env::remove_var("TEST_VAR");
-        env::remove_var("ANOTHER_VAR");
+        assert_eq!(substitute_vars("no_vars_here", &resolve), "no_vars_here");
+        assert_eq!(substitute_vars("${NONEXISTENT_VAR}", &resolve), "");
     }
 
     #[test]
-    #[serial]
-    fn test_find_unresolved_vars() {
-        env::remove_var("TEST_UNRESOLVED_VAR");
-        env::set_var("TEST_RESOLVED_VAR", "resolved");
+    fn test_find_vars() {
+        let resolved: &[&str] = &["TEST_RESOLVED_VAR"];
+        let is_unresolved = |name: &str| !resolved.contains(&name);
 
-        let vars = find_unresolved_vars("http://${TEST_UNRESOLVED_VAR}/api");
+        let vars = find_vars("http://${TEST_UNRESOLVED_VAR}/api", &is_unresolved);
         assert_eq!(vars, vec!["TEST_UNRESOLVED_VAR"]);
 
-        let vars = find_unresolved_vars("http://${TEST_RESOLVED_VAR}/api");
+        let vars = find_vars("http://${TEST_RESOLVED_VAR}/api", &is_unresolved);
         assert!(vars.is_empty());
 
-        let vars = find_unresolved_vars("${VAR1}:${VAR2}");
+        let vars = find_vars("${VAR1}:${VAR2}", &is_unresolved);
         assert_eq!(vars, vec!["VAR1", "VAR2"]);
-
-        env::remove_var("TEST_RESOLVED_VAR");
     }
 
     #[test]
     fn test_resolve_http() {
-        let result = resolve("http://localhost:8545");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "http://localhost:8545");
+        assert_eq!(
+            resolve("http://localhost:8545").unwrap(),
+            "http://localhost:8545"
+        );
     }
 
     #[test]
     fn test_resolve_https() {
-        let result = resolve("https://mainnet.infura.io");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "https://mainnet.infura.io");
+        assert_eq!(
+            resolve("https://mainnet.infura.io").unwrap(),
+            "https://mainnet.infura.io"
+        );
     }
 }

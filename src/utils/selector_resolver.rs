@@ -3,23 +3,22 @@ use super::{
     disk_cache::{DiskCache, CACHE_MISS_MARKER},
 };
 use reqwest::blocking::Client;
-use serde::Deserialize;
 use std::collections::HashMap;
 
 /// Default Sourcify API base URL for 4byte mirror.
 const DEFAULT_SOURCIFY_URL: &str = "https://api.4byte.sourcify.dev/";
 
 /// Best-effort function selector resolver using Sourcify's 4byte mirror with disk caching.
-pub struct SelectorResolver<'a> {
-    client: &'a Client,
+pub struct SelectorResolver {
+    client: Client,
     memory_cache: HashMap<String, String>,
     disk_cache: DiskCache,
     enabled: bool,
     cache_dirty: bool,
 }
 
-impl<'a> SelectorResolver<'a> {
-    pub fn new(client: &'a Client, enabled: bool) -> Self {
+impl SelectorResolver {
+    pub fn new(client: Client, enabled: bool) -> Self {
         Self {
             client,
             memory_cache: HashMap::new(),
@@ -33,224 +32,92 @@ impl<'a> SelectorResolver<'a> {
         self.enabled
     }
 
+    /// Resolve a 4-byte function selector to a text signature.
     pub fn resolve(&mut self, selector: &str, calldata: Option<&str>) -> Option<String> {
-        if !self.enabled {
-            return None;
-        }
-
-        if !selector.starts_with("0x") || selector.len() != 10 {
-            return None;
-        }
-
-        if let Some(sig) = self.memory_cache.get(selector) {
-            return (sig != CACHE_MISS_MARKER).then(|| sig.clone());
-        }
-
-        if let Some(sig) = self.disk_cache.get(selector) {
-            self.memory_cache.insert(selector.to_string(), sig.clone());
-            return (sig != CACHE_MISS_MARKER).then(|| sig.clone());
-        }
-        let base_url =
-            std::env::var("SOURCIFY_URL").unwrap_or_else(|_| DEFAULT_SOURCIFY_URL.to_string());
-        let url =
-            format!("{base_url}signature-database/v1/lookup?function={selector}&filter=false");
-
-        let resp = match self
-            .client
-            .get(&url)
-            .send()
-            .ok()
-            .and_then(|r| r.error_for_status().ok())
-        {
-            Some(r) => r,
-            None => {
-                self.cache_miss(selector);
-                return None;
-            }
-        };
-
-        #[derive(Deserialize)]
-        struct SourcifyResponse {
-            ok: bool,
-            result: SourcifyResult,
-        }
-
-        #[derive(Deserialize)]
-        struct SourcifyResult {
-            function: HashMap<String, Vec<SourcifyEntry>>,
-        }
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct SourcifyEntry {
-            name: String,
-            filtered: bool,
-            has_verified_contract: bool,
-        }
-
-        let response: SourcifyResponse = match resp.json().ok() {
-            Some(r) => r,
-            None => {
-                self.cache_miss(selector);
-                return None;
-            }
-        };
-
-        if !response.ok {
-            self.cache_miss(selector);
-            return None;
-        }
-
-        let entries = match response.result.function.get(selector) {
-            Some(e) if !e.is_empty() => e,
-            _ => {
-                self.cache_miss(selector);
-                return None;
-            }
-        };
-
-        let sig = if let Some(calldata) = calldata {
-            entries
-                .iter()
-                .filter(|e| e.has_verified_contract && !e.filtered)
-                .find(|e| can_decode(&e.name, calldata))
-                .or_else(|| {
-                    entries
-                        .iter()
-                        .filter(|e| e.has_verified_contract)
-                        .find(|e| can_decode(&e.name, calldata))
-                })
-                .or_else(|| {
-                    entries
-                        .iter()
-                        .filter(|e| !e.filtered)
-                        .find(|e| can_decode(&e.name, calldata))
-                })
-                .or_else(|| entries.iter().find(|e| can_decode(&e.name, calldata)))
-                .or_else(|| entries.first())
-                .map(|e| e.name.clone())?
-        } else {
-            entries
-                .iter()
-                .find(|e| e.has_verified_contract && !e.filtered)
-                .or_else(|| entries.iter().find(|e| e.has_verified_contract))
-                .or_else(|| entries.iter().find(|e| !e.filtered))
-                .or_else(|| entries.first())
-                .map(|e| e.name.clone())?
-        };
-
-        self.cache_signature(selector, &sig);
-        Some(sig)
+        self.lookup(selector, "function", 10, calldata)
     }
 
     /// Resolve an event topic0 hash to an event signature.
     pub fn resolve_event(&mut self, topic0: &str) -> Option<String> {
-        if !self.enabled {
+        self.lookup(topic0, "event", 66, None)
+    }
+
+    /// Unified Sourcify lookup for both function selectors and event topics.
+    fn lookup(
+        &mut self,
+        key: &str,
+        kind: &str,
+        expected_len: usize,
+        calldata: Option<&str>,
+    ) -> Option<String> {
+        if !self.enabled || !key.starts_with("0x") || key.len() != expected_len {
             return None;
         }
 
-        // Topic0 should be a 32-byte hash (66 chars with 0x prefix).
-        if !topic0.starts_with("0x") || topic0.len() != 66 {
-            return None;
-        }
-
-        // Check memory cache first.
-        if let Some(sig) = self.memory_cache.get(topic0) {
+        if let Some(sig) = self.memory_cache.get(key) {
             return (sig != CACHE_MISS_MARKER).then(|| sig.clone());
         }
 
-        // Check disk cache.
-        if let Some(sig) = self.disk_cache.get(topic0) {
-            self.memory_cache.insert(topic0.to_owned(), sig.clone());
-            return (sig != CACHE_MISS_MARKER).then(|| sig.clone());
+        if let Some(sig) = self.disk_cache.get(key) {
+            self.memory_cache.insert(key.to_owned(), sig.to_owned());
+            return (sig != CACHE_MISS_MARKER).then(|| sig.to_owned());
         }
 
-        // Query Sourcify API for event signature.
         let base_url =
             std::env::var("SOURCIFY_URL").unwrap_or_else(|_| DEFAULT_SOURCIFY_URL.to_owned());
-        let url = format!("{base_url}signature-database/v1/lookup?event={topic0}&filter=false");
+        let url = format!("{base_url}signature-database/v1/lookup?{kind}={key}&filter=false");
 
-        let resp = match self
+        let Some(resp) = self
             .client
             .get(&url)
             .send()
             .ok()
             .and_then(|r| r.error_for_status().ok())
-        {
-            Some(r) => r,
-            None => {
-                self.cache_miss(topic0);
-                return None;
-            }
+        else {
+            self.cache_miss(key);
+            return None;
         };
 
-        #[derive(Deserialize)]
-        struct SourcifyEventResponse {
-            ok: bool,
-            result: SourcifyEventResult,
-        }
-
-        #[derive(Deserialize)]
-        struct SourcifyEventResult {
-            event: HashMap<String, Vec<SourcifyEntry>>,
-        }
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct SourcifyEntry {
-            name: String,
-            #[allow(dead_code)]
-            filtered: bool,
-            #[allow(dead_code)]
-            has_verified_contract: bool,
-        }
-
-        let response: SourcifyEventResponse = match resp.json().ok() {
-            Some(r) => r,
-            None => {
-                self.cache_miss(topic0);
-                return None;
-            }
+        let Some(body) = resp.json::<serde_json::Value>().ok() else {
+            self.cache_miss(key);
+            return None;
         };
 
-        if !response.ok {
-            self.cache_miss(topic0);
+        if !body["ok"].as_bool().unwrap_or(false) {
+            self.cache_miss(key);
             return None;
         }
 
-        let entries = match response.result.event.get(topic0) {
+        let entries = match body["result"][kind][key].as_array() {
             Some(e) if !e.is_empty() => e,
             _ => {
-                self.cache_miss(topic0);
+                self.cache_miss(key);
                 return None;
             }
         };
 
-        // Take the first entry (could prioritize verified contracts like we do for functions).
-        let sig = entries.first().map(|e| e.name.clone())?;
-
-        self.cache_signature(topic0, &sig);
+        let sig = select_best_entry(entries, calldata)?;
+        self.cache_signature(key, &sig);
         Some(sig)
     }
 
-    fn cache_miss(&mut self, selector: &str) {
+    fn cache_miss(&mut self, key: &str) {
         self.memory_cache
-            .insert(selector.to_owned(), CACHE_MISS_MARKER.to_owned());
+            .insert(key.to_owned(), CACHE_MISS_MARKER.to_owned());
         self.disk_cache
-            .insert(selector.to_owned(), CACHE_MISS_MARKER.to_owned());
+            .insert(key.to_owned(), CACHE_MISS_MARKER.to_owned());
         self.cache_dirty = true;
     }
 
-    fn cache_signature(&mut self, selector: &str, signature: &str) {
+    fn cache_signature(&mut self, key: &str, signature: &str) {
         self.memory_cache
-            .insert(selector.to_owned(), signature.to_owned());
-        self.disk_cache
-            .insert(selector.to_owned(), signature.to_owned());
+            .insert(key.to_owned(), signature.to_owned());
+        self.disk_cache.insert(key.to_owned(), signature.to_owned());
         self.cache_dirty = true;
     }
 }
 
-impl<'a> Drop for SelectorResolver<'a> {
+impl Drop for SelectorResolver {
     fn drop(&mut self) {
         if self.cache_dirty {
             self.disk_cache.save();
@@ -258,6 +125,42 @@ impl<'a> Drop for SelectorResolver<'a> {
     }
 }
 
-fn can_decode(signature: &str, calldata: &str) -> bool {
-    abi_decoder::can_decode(signature, calldata)
+/// Select the best entry from a Sourcify response array.
+///
+/// When `calldata` is provided (function lookups), entries are prioritized by:
+/// verified + unfiltered + decodable > verified + decodable > unfiltered + decodable >
+/// decodable > first entry.
+///
+/// When `calldata` is `None` (event lookups), returns the first entry.
+fn select_best_entry(entries: &[serde_json::Value], calldata: Option<&str>) -> Option<String> {
+    let name = |e: &serde_json::Value| e["name"].as_str().map(str::to_owned);
+    let verified = |e: &serde_json::Value| e["hasVerifiedContract"].as_bool().unwrap_or(false);
+    let filtered = |e: &serde_json::Value| e["filtered"].as_bool().unwrap_or(false);
+
+    if let Some(calldata) = calldata {
+        let decodable =
+            |e: &serde_json::Value| name(e).is_some_and(|n| abi_decoder::can_decode(&n, calldata));
+
+        entries
+            .iter()
+            .filter(|e| verified(e) && !filtered(e))
+            .find(|e| decodable(e))
+            .or_else(|| {
+                entries
+                    .iter()
+                    .filter(|e| verified(e))
+                    .find(|e| decodable(e))
+            })
+            .or_else(|| {
+                entries
+                    .iter()
+                    .filter(|e| !filtered(e))
+                    .find(|e| decodable(e))
+            })
+            .or_else(|| entries.iter().find(|e| decodable(e)))
+            .or_else(|| entries.first())
+            .and_then(&name)
+    } else {
+        entries.first().and_then(name)
+    }
 }
