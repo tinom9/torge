@@ -149,12 +149,17 @@ fn format_single_value(value: &alloy_dyn_abi::DynSolValue) -> String {
 }
 
 /// Format a topic value (bytes32) as a readable value.
-/// Tries to parse as number or extract address; otherwise shows full hex.
+/// Tries to parse as number (must fit in u128 as a heuristic to distinguish
+/// numbers from hashes), then detects addresses; otherwise shows full hex.
 fn format_topic_value(topic: &str) -> String {
     let stripped = topic.strip_prefix("0x").unwrap_or(topic);
 
-    if let Some(num) = hex_utils::parse_hex_u128(topic) {
-        return num.to_string();
+    // Heuristic: if the value fits in u128, it's likely a number.
+    // Full 32-byte values (hashes, large IDs) won't fit.
+    if let Some(num) = hex_utils::parse_hex_u256(topic) {
+        if num <= alloy_primitives::U256::from(u128::MAX) {
+            return num.to_string();
+        }
     }
 
     // Detect address format (24 hex leading zeros + 20-byte address).

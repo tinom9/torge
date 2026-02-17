@@ -114,7 +114,6 @@ pub fn run(args: TxArgs) -> Result<(), TxError> {
 
     let client = Client::builder()
         .timeout(Duration::from_secs(60))
-        .no_proxy()
         .build()?;
 
     let trace = debug_trace_transaction(&client, &rpc_url, &args.tx_hash, args.include_logs)?;
@@ -201,8 +200,8 @@ fn print_call(
     let gas_used = node
         .gas_used
         .as_deref()
-        .and_then(hex_utils::parse_hex_u64)
-        .unwrap_or(0);
+        .and_then(hex_utils::parse_hex_u256)
+        .unwrap_or_default();
 
     let to = node.to.as_deref().unwrap_or("?");
     let precompile = precompiles::get_precompile_info(to);
