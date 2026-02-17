@@ -101,6 +101,7 @@ pub struct CallTrace {
     pub value: Option<String>,
     pub gas_used: Option<String>,
     pub input: Option<String>,
+    pub output: Option<String>,
     pub error: Option<String>,
     #[serde(default)]
     pub logs: Vec<Log>,
@@ -322,7 +323,15 @@ fn print_call(
     println!("{prefix}{connector}[{gas_used}] {call_desc}{call_type_suffix}");
 
     if let Some(err) = &node.error {
-        println!("{prefix}    ↳ error: {err}");
+        let reason = node
+            .output
+            .as_deref()
+            .and_then(abi_decoder::decode_revert_reason);
+        if let Some(reason) = reason {
+            println!("{prefix}    ↳ error: {err} — {reason}");
+        } else {
+            println!("{prefix}    ↳ error: {err}");
+        }
     }
 
     let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });

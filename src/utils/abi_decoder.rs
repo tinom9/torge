@@ -104,6 +104,46 @@ pub fn format_param_type(kind: &DynSolType) -> String {
     }
 }
 
+/// Decode a revert reason from raw output bytes (0x-prefixed hex).
+///
+/// Recognises:
+/// - `Error(string)` — selector `0x08c379a0`
+/// - `Panic(uint256)` — selector `0x4e487b71`
+pub fn decode_revert_reason(output: &str) -> Option<String> {
+    let hex = output.strip_prefix("0x").unwrap_or(output);
+    if hex.len() < 8 {
+        return None;
+    }
+
+    let selector = &hex[..8];
+    let data = hex::decode(&hex[8..]).ok()?;
+
+    match selector {
+        // Error(string)
+        "08c379a0" => {
+            let ty: DynSolType = "(string)".parse().ok()?;
+            let decoded = ty.abi_decode_params(&data).ok()?;
+            if let DynSolValue::Tuple(vals) = decoded {
+                vals.first().map(format_value)
+            } else {
+                Some(format_value(&decoded))
+            }
+        }
+        // Panic(uint256)
+        "4e487b71" => {
+            let ty: DynSolType = "(uint256)".parse().ok()?;
+            let decoded = ty.abi_decode_params(&data).ok()?;
+            let code = if let DynSolValue::Tuple(vals) = &decoded {
+                vals.first().map(format_value)
+            } else {
+                Some(format_value(&decoded))
+            };
+            Some(format!("Panic({})", code.unwrap_or_default()))
+        }
+        _ => None,
+    }
+}
+
 pub fn format_value(value: &DynSolValue) -> String {
     match value {
         DynSolValue::Address(a) => format!("{a:#x}"),
@@ -229,5 +269,42 @@ mod tests {
             format_value(&DynSolValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])),
             "0xdeadbeef"
         );
+    }
+
+    #[test]
+    fn test_decode_revert_error_string() {
+        // Error("ERC20: transfer amount exceeds balance")
+        // selector 08c379a0 + abi-encoded string
+        let output = "0x08c379a0\
+            0000000000000000000000000000000000000000000000000000000000000020\
+            0000000000000000000000000000000000000000000000000000000000000026\
+            45524332303a207472616e7366657220616d6f756e7420657863656564732062\
+            616c616e63650000000000000000000000000000000000000000000000000000";
+        let reason = decode_revert_reason(output);
+        assert!(reason.is_some());
+        assert_eq!(
+            reason.unwrap(),
+            "ERC20: transfer amount exceeds balance"
+        );
+    }
+
+    #[test]
+    fn test_decode_revert_panic() {
+        // Panic(0x11) — arithmetic overflow
+        let output = "0x4e487b710000000000000000000000000000000000000000000000000000000000000011";
+        let reason = decode_revert_reason(output);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "Panic(17)");
+    }
+
+    #[test]
+    fn test_decode_revert_unknown_selector() {
+        let output = "0xdeadbeef0000000000000000000000000000000000000000000000000000000000000001";
+        assert!(decode_revert_reason(output).is_none());
+    }
+
+    #[test]
+    fn test_decode_revert_too_short() {
+        assert!(decode_revert_reason("0x1234").is_none());
     }
 }
