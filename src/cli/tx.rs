@@ -112,9 +112,7 @@ pub fn run(args: TxArgs) -> Result<(), TxError> {
             .map_err(|_| TxError::MissingRpcUrl)?,
     };
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(60)).build()?;
 
     let trace = debug_trace_transaction(&client, &rpc_url, &args.tx_hash, args.include_logs)?;
 

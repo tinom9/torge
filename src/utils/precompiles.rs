@@ -28,9 +28,7 @@ pub fn get_precompile_info(address: &str) -> Option<(&'static str, &'static str)
         "0000000000000007" | "07" | "7" => Some(("ecmul", "ecmul(bytes)")),
         "0000000000000008" | "08" | "8" => Some(("ecpairing", "ecpairing(bytes)")),
         "0000000000000009" | "09" | "9" => Some(("blake2f", "blake2f(bytes)")),
-        "000000000000000a" | "0a" | "a" => {
-            Some(("pointevaluation", "pointevaluation(bytes)"))
-        }
+        "000000000000000a" | "0a" | "a" => Some(("pointevaluation", "pointevaluation(bytes)")),
         _ => None,
     }
 }

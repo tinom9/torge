@@ -17,7 +17,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command {
         cli::Command::Tx(tx_args) => cli::tx::run(tx_args)?,
-        cli::Command::Clean => cli::clean::run()?,
+        cli::Command::Clean(clean_args) => cli::clean::run(clean_args)?,
     }
 
     Ok(())

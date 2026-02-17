@@ -12,8 +12,15 @@ pub struct DiskCache {
 
 impl DiskCache {
     /// Get the path to the cache file.
+    ///
+    /// Respects `XDG_CACHE_HOME` on all platforms (not just Linux) so that
+    /// integration tests using a temp directory work on macOS/Windows too.
     pub fn cache_path() -> Option<PathBuf> {
-        dirs::cache_dir().map(|dir| dir.join("torge").join("selectors.json"))
+        let base = std::env::var("XDG_CACHE_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(dirs::cache_dir)?;
+        Some(base.join("torge").join("selectors.json"))
     }
 
     fn is_disabled() -> bool {
@@ -64,6 +71,29 @@ impl DiskCache {
 
     pub fn insert(&mut self, selector: String, signature: String) {
         self.selectors.insert(selector, signature);
+    }
+
+    /// Remove all unknown (unresolved) selectors from the persisted cache.
+    /// Returns `(kept, removed)` counts.
+    pub fn remove_unknown() -> Result<(usize, usize), String> {
+        let path = Self::cache_path().ok_or("could not determine cache directory")?;
+        if !path.exists() {
+            return Ok((0, 0));
+        }
+        let contents =
+            fs::read_to_string(&path).map_err(|e| format!("failed to read cache: {e}"))?;
+        let mut cache: DiskCache =
+            serde_json::from_str(&contents).map_err(|e| format!("failed to parse cache: {e}"))?;
+
+        let before = cache.selectors.len();
+        cache.selectors.retain(|_, v| v != CACHE_MISS_MARKER);
+        let after = cache.selectors.len();
+
+        let json = serde_json::to_string_pretty(&cache)
+            .map_err(|e| format!("failed to serialize cache: {e}"))?;
+        fs::write(&path, json).map_err(|e| format!("failed to write cache: {e}"))?;
+
+        Ok((after, before - after))
     }
 }
 

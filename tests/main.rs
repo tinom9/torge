@@ -6,6 +6,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use tempfile::TempDir;
 
 #[derive(Debug, Deserialize)]
 struct TestCaseRaw {
@@ -288,4 +289,67 @@ fn test_full_trace_outputs() {
             );
         }
     }
+}
+
+#[test]
+fn test_clean_only_unknown() {
+    let tmp = TempDir::new().unwrap();
+    let cache_path = tmp.path().join("torge").join("selectors.json");
+    std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+
+    // Write a cache with mixed known and unknown entries.
+    let cache = json!({
+        "selectors": {
+            "0xa9059cbb": "transfer(address,uint256)",
+            "0x70a08231": "balanceOf(address)",
+            "0xdeadbeef": "<UNKNOWN>",
+            "0xcafebabe": "<UNKNOWN>"
+        }
+    });
+    std::fs::write(&cache_path, serde_json::to_string_pretty(&cache).unwrap()).unwrap();
+
+    let binary_path = assert_cmd::cargo::cargo_bin!("torge");
+    let mut cmd = Command::new(binary_path);
+    cmd.arg("clean")
+        .arg("--only-unknown")
+        .env("XDG_CACHE_HOME", tmp.path());
+
+    cmd.assert().success().stdout(predicate::str::contains(
+        "removed 2 unknown selector(s), kept 2",
+    ));
+
+    // Verify the cache file still exists with only known entries.
+    let remaining: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&cache_path).unwrap()).unwrap();
+    let selectors = remaining["selectors"].as_object().unwrap();
+    assert_eq!(selectors.len(), 2);
+    assert!(selectors.contains_key("0xa9059cbb"));
+    assert!(selectors.contains_key("0x70a08231"));
+    assert!(!selectors.contains_key("0xdeadbeef"));
+    assert!(!selectors.contains_key("0xcafebabe"));
+}
+
+#[test]
+fn test_clean_removes_entire_cache() {
+    let tmp = TempDir::new().unwrap();
+    let cache_path = tmp.path().join("torge").join("selectors.json");
+    std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+
+    let cache = json!({
+        "selectors": {
+            "0xa9059cbb": "transfer(address,uint256)",
+            "0xdeadbeef": "<UNKNOWN>"
+        }
+    });
+    std::fs::write(&cache_path, serde_json::to_string_pretty(&cache).unwrap()).unwrap();
+
+    let binary_path = assert_cmd::cargo::cargo_bin!("torge");
+    let mut cmd = Command::new(binary_path);
+    cmd.arg("clean").env("XDG_CACHE_HOME", tmp.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("cache cleared"));
+
+    assert!(!cache_path.exists());
 }

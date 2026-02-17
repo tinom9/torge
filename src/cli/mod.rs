@@ -17,5 +17,5 @@ pub enum Command {
     Tx(tx::TxArgs),
 
     /// Clean the selector cache.
-    Clean,
+    Clean(clean::CleanArgs),
 }
