@@ -85,15 +85,15 @@ pub enum TraceError {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RpcResponse<T> {
-    pub result: Option<T>,
-    pub error: Option<RpcError>,
+struct RpcResponse<T> {
+    result: Option<T>,
+    error: Option<RpcError>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RpcError {
-    pub code: i64,
-    pub message: String,
+struct RpcError {
+    code: i64,
+    message: String,
 }
 
 /// Result shape for geth-style `callTracer`.
@@ -152,7 +152,7 @@ pub fn validate_address(addr: &str, field: &str) -> Result<(), TraceError> {
     Ok(())
 }
 
-/// Validate that a string is 0x-prefixed hex data.
+/// Validate that a string is 0x-prefixed hex data with an even number of hex chars.
 pub fn validate_hex(data: &str, field: &str) -> Result<(), TraceError> {
     let hex = data
         .strip_prefix("0x")
@@ -160,6 +160,11 @@ pub fn validate_hex(data: &str, field: &str) -> Result<(), TraceError> {
     if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(TraceError::InvalidInput(format!(
             "{field}: invalid hex characters"
+        )));
+    }
+    if hex.len() % 2 != 0 {
+        return Err(TraceError::InvalidInput(format!(
+            "{field}: odd number of hex characters (must be full bytes)"
         )));
     }
     Ok(())
@@ -311,32 +316,7 @@ fn print_call(
         (to, sig)
     };
 
-    let colored_addr = pal.cyan(display_addr);
-    let value_str = value.map(|v| pal.yellow(&format!("{{value: {v}}}")));
-
-    let call_desc = if let Some(val_s) = &value_str {
-        if sig.is_empty() {
-            format!("{colored_addr}{val_s}")
-        } else if let Some(paren_pos) = sig.find('(') {
-            format!(
-                "{colored_addr}::{}{val_s}{}",
-                pal.bold(&sig[..paren_pos]),
-                &sig[paren_pos..]
-            )
-        } else {
-            format!("{colored_addr}::{}{val_s}", pal.bold(&sig))
-        }
-    } else if sig.is_empty() {
-        colored_addr
-    } else if let Some(paren_pos) = sig.find('(') {
-        format!(
-            "{colored_addr}::{}{}",
-            pal.bold(&sig[..paren_pos]),
-            &sig[paren_pos..]
-        )
-    } else {
-        format!("{colored_addr}::{sig}")
-    };
+    let call_desc = format_call_desc(display_addr, &sig, value, pal);
 
     let call_type = node.call_type.as_deref().unwrap_or("").to_uppercase();
 
@@ -449,6 +429,40 @@ fn print_call(
     }
 }
 
+/// Build the display string for a call: `address::functionName(args){value: N}`.
+fn format_call_desc(
+    addr: &str,
+    sig: &str,
+    value: Option<alloy_primitives::U256>,
+    pal: Palette,
+) -> String {
+    let colored_addr = pal.cyan(addr);
+    let value_part = value.map(|v| pal.yellow(&format!("{{value: {v}}}")));
+
+    let sig_part = if sig.is_empty() {
+        String::new()
+    } else if let Some(paren) = sig.find('(') {
+        format!("::{}{}", pal.bold(&sig[..paren]), &sig[paren..])
+    } else {
+        format!("::{sig}")
+    };
+
+    match value_part {
+        Some(val_s) if sig_part.is_empty() => format!("{colored_addr}{val_s}"),
+        Some(val_s) if sig.contains('(') => {
+            let paren = sig.find('(').unwrap();
+            format!(
+                "{colored_addr}::{}{val_s}{}",
+                pal.bold(&sig[..paren]),
+                &sig[paren..]
+            )
+        }
+        Some(val_s) => format!("{colored_addr}{sig_part}{val_s}"),
+        None if sig_part.is_empty() => colored_addr,
+        None => format!("{colored_addr}{sig_part}"),
+    }
+}
+
 fn extract_selector(input: &str) -> Option<String> {
     let s = input.strip_prefix("0x").unwrap_or(input);
     s.get(..8).map(|sel| format!("0x{sel}"))
@@ -526,5 +540,7 @@ mod tests {
         assert!(validate_hex("0x", "data").is_ok());
         assert!(validate_hex("a9059cbb", "data").is_err());
         assert!(validate_hex("0xGGGG", "data").is_err());
+        assert!(validate_hex("0xabc", "data").is_err()); // odd length
+        assert!(validate_hex("0xab", "data").is_ok());
     }
 }

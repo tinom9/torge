@@ -15,7 +15,10 @@ pub struct CallArgs {
     #[arg(long)]
     pub from: Option<String>,
 
-    /// Gas limit for the simulated call (hex, e.g. 0x5f5e100).
+    /// Gas limit for the simulated call.
+    ///
+    /// Supports hex (`0x5f5e100`), decimal (`100000000`), and units
+    /// (`1gwei`, `100gwei`).
     #[arg(long)]
     pub gas_limit: Option<String>,
 
@@ -43,10 +46,6 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
     if let Some(from) = &args.from {
         trace::validate_address(from, "--from")?;
     }
-    if let Some(gas) = &args.gas_limit {
-        trace::validate_hex(gas, "--gas-limit")?;
-    }
-
     let block_id = parse_block_id(&args.block)?;
 
     let mut tx_object = json!({
@@ -57,8 +56,9 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
     if let Some(from) = &args.from {
         tx_object["from"] = json!(from);
     }
-    if let Some(gas) = &args.gas_limit {
-        tx_object["gas"] = json!(gas);
+    if let Some(raw_gas) = &args.gas_limit {
+        let hex_gas = value_parser::parse_value(raw_gas).map_err(TraceError::InvalidValue)?;
+        tx_object["gas"] = json!(hex_gas);
     }
     if let Some(raw_value) = &args.value {
         let hex_value = value_parser::parse_value(raw_value).map_err(TraceError::InvalidValue)?;

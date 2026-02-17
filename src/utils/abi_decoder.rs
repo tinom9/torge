@@ -40,31 +40,7 @@ fn decode_args(signature: &str, hex_data: &str) -> Option<Vec<(DynSolType, DynSo
 
 /// Check if a signature can decode the given calldata.
 pub fn can_decode(signature: &str, calldata: &str) -> bool {
-    let s = calldata.strip_prefix("0x").unwrap_or(calldata);
-    if s.len() < 8 {
-        return false;
-    }
-
-    let args_hex = &s[8..];
-    let Ok(args_bytes) = hex::decode(args_hex) else {
-        return false;
-    };
-
-    let Some(start) = signature.find('(') else {
-        return false;
-    };
-    let Some(params_str) = signature.get(start..) else {
-        return false;
-    };
-    let Ok(param_type) = params_str.parse::<DynSolType>() else {
-        return false;
-    };
-
-    if matches!(param_type, DynSolType::Tuple(ref v) if v.is_empty()) && args_bytes.is_empty() {
-        return true;
-    }
-
-    param_type.abi_decode_params(&args_bytes).is_ok()
+    decode_function_args(signature, calldata).is_some()
 }
 
 /// Split a decoded `DynSolValue` into (type, value) pairs for each parameter.
@@ -120,25 +96,10 @@ pub fn decode_revert_reason(output: &str) -> Option<String> {
 
     match selector {
         // Error(string)
-        "08c379a0" => {
-            let ty: DynSolType = "(string)".parse().ok()?;
-            let decoded = ty.abi_decode_params(&data).ok()?;
-            if let DynSolValue::Tuple(vals) = decoded {
-                vals.first().map(format_value)
-            } else {
-                Some(format_value(&decoded))
-            }
-        }
+        "08c379a0" => decode_single_param("(string)", &data),
         // Panic(uint256)
         "4e487b71" => {
-            let ty: DynSolType = "(uint256)".parse().ok()?;
-            let decoded = ty.abi_decode_params(&data).ok()?;
-            let code_val = if let DynSolValue::Tuple(vals) = &decoded {
-                vals.first().map(format_value)
-            } else {
-                Some(format_value(&decoded))
-            };
-            let code_str = code_val.unwrap_or_default();
+            let code_str = decode_single_param("(uint256)", &data)?;
             let desc = panic_description(&code_str);
             if desc.is_empty() {
                 Some(format!("Panic({code_str})"))
@@ -147,6 +108,17 @@ pub fn decode_revert_reason(output: &str) -> Option<String> {
             }
         }
         _ => None,
+    }
+}
+
+/// ABI-decode a single-param tuple and format the first value.
+fn decode_single_param(type_str: &str, data: &[u8]) -> Option<String> {
+    let ty: DynSolType = type_str.parse().ok()?;
+    let decoded = ty.abi_decode_params(data).ok()?;
+    if let DynSolValue::Tuple(vals) = decoded {
+        vals.first().map(format_value)
+    } else {
+        Some(format_value(&decoded))
     }
 }
 

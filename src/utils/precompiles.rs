@@ -3,17 +3,20 @@
 /// Precompiled contracts are at addresses 0x01-0x0a (and potentially higher in newer forks).
 /// Returns `Some((name, signature))` if the address is a known precompile, `None` otherwise.
 pub fn get_precompile_info(address: &str) -> Option<(&'static str, &'static str)> {
-    let addr_lower = address.to_lowercase();
-    let addr = addr_lower.strip_prefix("0x").unwrap_or(&addr_lower);
+    let addr = address.strip_prefix("0x").unwrap_or(address);
 
-    // Handle both full addresses (40 chars) and short forms.
-    let normalized = if addr.len() == 40 {
-        &addr[24..] // Take last 16 chars (8 bytes) for comparison.
-    } else {
-        addr
-    };
+    // Full 40-char addresses: precompiles have 38+ leading zeros.
+    // Short-circuit: if the non-zero portion is beyond 0x0a, it's not a precompile.
+    if addr.len() == 40 && !addr[..24].chars().all(|c| c == '0') {
+        return None;
+    }
 
-    match normalized {
+    let normalized = if addr.len() == 40 { &addr[24..] } else { addr };
+
+    // Lowercase only the short suffix for matching.
+    let normalized_lower = normalized.to_lowercase();
+
+    match normalized_lower.as_str() {
         "0000000000000001" | "01" | "1" => {
             // ecrecover takes 128 bytes: hash(32) + v(32) + r(32) + s(32).
             Some(("ecrecover", "ecrecover(bytes32,uint8,uint256,uint256)"))
