@@ -85,6 +85,9 @@ pub fn format_param_type(kind: &DynSolType) -> String {
 /// Recognises:
 /// - `Error(string)` — selector `0x08c379a0`
 /// - `Panic(uint256)` — selector `0x4e487b71`
+///
+/// Returns `None` for unknown selectors — use [`decode_custom_revert`] with a
+/// resolver as a fallback.
 pub fn decode_revert_reason(output: &str) -> Option<String> {
     let hex = output.strip_prefix("0x").unwrap_or(output);
     if hex.len() < 8 {
@@ -108,6 +111,40 @@ pub fn decode_revert_reason(output: &str) -> Option<String> {
             }
         }
         _ => None,
+    }
+}
+
+/// Try to decode a custom error by resolving its 4-byte selector via Sourcify.
+///
+/// Falls back to returning the raw selector hex if the signature resolves but
+/// the arguments cannot be decoded.
+pub fn decode_custom_revert(
+    output: &str,
+    resolver: &mut super::selector_resolver::SelectorResolver,
+) -> Option<String> {
+    let hex = output.strip_prefix("0x").unwrap_or(output);
+    if hex.len() < 8 {
+        return None;
+    }
+
+    let selector = &hex[..8];
+
+    // Don't re-resolve built-in selectors
+    if selector == "08c379a0" || selector == "4e487b71" {
+        return None;
+    }
+
+    let prefixed = format!("0x{selector}");
+    let signature = resolver.resolve(&prefixed, Some(output))?;
+    let name = signature.split('(').next().unwrap_or(&signature);
+
+    // Try to decode arguments
+    if let Some(args) = decode_function_args(&signature, output) {
+        let formatted: Vec<String> = args.iter().map(|(_, v)| format_value(v)).collect();
+        Some(format!("{name}({})", formatted.join(", ")))
+    } else {
+        // Resolved the name but can't decode args — still useful
+        Some(signature)
     }
 }
 
@@ -298,5 +335,30 @@ mod tests {
     #[test]
     fn test_decode_revert_too_short() {
         assert!(decode_revert_reason("0x1234").is_none());
+    }
+
+    #[test]
+    fn test_decode_custom_revert_skips_builtins() {
+        let mut resolver = crate::utils::selector_resolver::SelectorResolver::new(
+            reqwest::blocking::Client::new(),
+            false,
+        );
+        // Error(string) selector should be skipped by decode_custom_revert
+        let output = "0x08c379a0\
+            0000000000000000000000000000000000000000000000000000000000000020\
+            0000000000000000000000000000000000000000000000000000000000000005\
+            68656c6c6f000000000000000000000000000000000000000000000000000000";
+        assert!(decode_custom_revert(output, &mut resolver).is_none());
+    }
+
+    #[test]
+    fn test_decode_custom_revert_unknown_no_resolver() {
+        // Resolver is disabled, so unknown selectors can't be resolved
+        let mut resolver = crate::utils::selector_resolver::SelectorResolver::new(
+            reqwest::blocking::Client::new(),
+            false,
+        );
+        let output = "0xdeadbeef0000000000000000000000000000000000000000000000000000000000000001";
+        assert!(decode_custom_revert(output, &mut resolver).is_none());
     }
 }

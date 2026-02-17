@@ -345,7 +345,12 @@ fn print_call(
         let reason = node
             .output
             .as_deref()
-            .and_then(abi_decoder::decode_revert_reason);
+            .and_then(abi_decoder::decode_revert_reason)
+            .or_else(|| {
+                node.output
+                    .as_deref()
+                    .and_then(|o| abi_decoder::decode_custom_revert(o, resolver))
+            });
         let err_msg = if let Some(reason) = reason {
             pal.red(&format!("↳ error: {err} — {reason}"))
         } else {
