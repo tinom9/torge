@@ -124,7 +124,7 @@ fn create_client(no_proxy: bool) -> Result<Client, TraceError> {
 }
 
 /// Resolve RPC URL from an optional user-provided value or env vars.
-pub fn resolve_rpc_url(url_or_alias: Option<String>) -> Result<String, TraceError> {
+fn resolve_rpc_url(url_or_alias: Option<String>) -> Result<String, TraceError> {
     match url_or_alias {
         Some(val) => Ok(rpc_url::resolve(&val)?),
         None => std::env::var("RPC_URL")

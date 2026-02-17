@@ -147,9 +147,22 @@ fn run_tx_test(test_case: &TxTestCase, expected_file: &str, mode: TestMode) {
         }
     }
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains(expected_output));
+    let output = cmd
+        .output()
+        .unwrap_or_else(|e| panic!("[{}] failed to run: {e}", test_case.name));
+    assert!(
+        output.status.success(),
+        "[{}] exited with {}: {}",
+        test_case.name,
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&expected_output),
+        "[{}] expected output not found in stdout.\nExpected file: {expected_file}\nStdout:\n{stdout}",
+        test_case.name
+    );
 }
 
 #[test]
@@ -306,9 +319,22 @@ fn run_call_test(test_case: &CallTestCase, expected_file: &str, mode: TestMode) 
         }
     }
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains(expected_output));
+    let output = cmd
+        .output()
+        .unwrap_or_else(|e| panic!("[{}] failed to run: {e}", test_case.name));
+    assert!(
+        output.status.success(),
+        "[{}] exited with {}: {}",
+        test_case.name,
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&expected_output),
+        "[{}] expected output not found in stdout.\nExpected file: {expected_file}\nStdout:\n{stdout}",
+        test_case.name
+    );
 }
 
 #[test]

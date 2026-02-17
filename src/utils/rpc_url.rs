@@ -51,10 +51,13 @@ fn resolve_alias(alias: &str) -> Result<String, RpcUrlError> {
 
     let config: toml::Value = toml::from_str(&contents)?;
 
+    // Support both string and table formats:
+    //   alias = "https://..."           (string)
+    //   alias = { url = "https://..." } (table, as used by Foundry)
     let url = config
         .get("rpc_endpoints")
         .and_then(|endpoints| endpoints.get(alias))
-        .and_then(|v| v.as_str())
+        .and_then(|v| v.as_str().or_else(|| v.get("url").and_then(|u| u.as_str())))
         .ok_or_else(|| RpcUrlError::AliasNotFound(alias.to_string()))?;
 
     Ok(substitute_env_vars(url))
@@ -66,18 +69,29 @@ fn substitute_env_vars(s: &str) -> String {
 }
 
 /// Core variable substitution logic, parameterized by a resolver function.
+///
+/// Advances the scan position past each replacement to avoid re-processing
+/// substituted text (prevents infinite loops if a value contains `${`).
 fn substitute_vars(s: &str, resolve_var: impl Fn(&str) -> Option<String>) -> String {
     let mut result = s.to_string();
     let var_start_len = VAR_START.len();
+    let mut pos = 0;
 
-    while let Some(start) = result.find(VAR_START) {
+    while pos < result.len() {
+        let Some(rel) = result[pos..].find(VAR_START) else {
+            break;
+        };
+        let start = pos + rel;
+
         let Some(end_offset) = result[start..].find(VAR_END) else {
             break;
         };
 
         let var_name = &result[start + var_start_len..start + end_offset];
         let replacement = resolve_var(var_name).unwrap_or_default();
+        let replacement_len = replacement.len();
         result.replace_range(start..=start + end_offset, &replacement);
+        pos = start + replacement_len;
     }
     result
 }
@@ -151,10 +165,10 @@ fn validate_resolved_url(url: &str, alias: &str) -> Result<(), RpcUrlError> {
 fn get_raw_url_from_foundry(alias: &str) -> Option<String> {
     let contents = fs::read_to_string(FOUNDRY_CONFIG).ok()?;
     let config: toml::Value = toml::from_str(&contents).ok()?;
-    config
-        .get("rpc_endpoints")?
-        .get(alias)?
+    let entry = config.get("rpc_endpoints")?.get(alias)?;
+    entry
         .as_str()
+        .or_else(|| entry.get("url").and_then(|u| u.as_str()))
         .map(ToOwned::to_owned)
 }
 
@@ -188,6 +202,14 @@ mod tests {
         );
         assert_eq!(substitute_vars("no_vars_here", &resolve), "no_vars_here");
         assert_eq!(substitute_vars("${NONEXISTENT_VAR}", &resolve), "");
+
+        // Replacement containing ${...} must not be re-processed (no infinite loop).
+        let tricky: HashMap<&str, &str> = [("VAR", "has${VAR}inside")].into();
+        let tricky_resolve = |name: &str| tricky.get(name).map(|v| v.to_string());
+        assert_eq!(
+            substitute_vars("pre${VAR}post", &tricky_resolve),
+            "prehas${VAR}insidepost"
+        );
     }
 
     #[test]
