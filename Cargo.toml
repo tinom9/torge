@@ -2,7 +2,7 @@
 name = "torge"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.87"
 description = "CLI tool to produce Foundry-style traces for EVM transactions through debug_traceTransaction RPC requests"
 readme = "README.md"
 homepage = "https://github.com/tinom9/torge"
