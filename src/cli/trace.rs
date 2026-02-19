@@ -492,7 +492,7 @@ fn print_arg(
     use DynSolValue as V;
 
     let indent = "  ".repeat(depth);
-    let type_str = pal.dim(&abi_decoder::format_param_type(ty));
+    let type_str = pal.dim(&ty.to_string());
 
     match (ty, value) {
         (T::Tuple(inner_types), V::Tuple(inner_values)) => {

@@ -1,41 +1,24 @@
-use alloy_dyn_abi::{DynSolType, DynSolValue};
+use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt};
+use alloy_json_abi::Function;
 
-/// Decode precompile arguments (no 4-byte selector prefix).
-///
-/// Precompiles receive raw input data without a function selector prefix.
-pub fn decode_precompile_args(
-    signature: &str,
-    input: &str,
-) -> Option<Vec<(DynSolType, DynSolValue)>> {
-    let hex = input.strip_prefix("0x").unwrap_or(input);
-    decode_args(signature, hex)
-}
-
-/// Decode ABI tokens given a text signature and full calldata hex, paired with
-/// their corresponding dynamic ABI types.
+/// Decode ABI-encoded function arguments (strips 4-byte selector).
 pub fn decode_function_args(
     signature: &str,
     input: &str,
 ) -> Option<Vec<(DynSolType, DynSolValue)>> {
-    let hex = input.strip_prefix("0x").unwrap_or(input);
-    hex.get(8..)
-        .and_then(|args_hex| decode_args(signature, args_hex))
+    let bytes = decode_hex(input)?;
+    if bytes.len() < 4 {
+        return None;
+    }
+    decode_with_function(signature, &bytes[4..])
 }
 
-/// Shared ABI decoding: parse signature, decode bytes, split into typed pairs.
-fn decode_args(signature: &str, hex_data: &str) -> Option<Vec<(DynSolType, DynSolValue)>> {
-    let bytes = hex::decode(hex_data).ok()?;
-
-    let start = signature.find('(')?;
-    let params_str = signature.get(start..)?;
-    let param_type: DynSolType = params_str.parse().ok()?;
-
-    if matches!(param_type, DynSolType::Tuple(ref v) if v.is_empty()) && bytes.is_empty() {
-        return Some(Vec::new());
-    }
-
-    let decoded = param_type.abi_decode_params(&bytes).ok()?;
-    Some(split_types_and_values(param_type, decoded))
+/// Decode precompile arguments (no 4-byte selector prefix).
+pub fn decode_precompile_args(
+    signature: &str,
+    input: &str,
+) -> Option<Vec<(DynSolType, DynSolValue)>> {
+    decode_with_function(signature, &decode_hex(input)?)
 }
 
 /// Check if a signature can decode the given calldata.
@@ -43,66 +26,28 @@ pub fn can_decode(signature: &str, calldata: &str) -> bool {
     decode_function_args(signature, calldata).is_some()
 }
 
-/// Split a decoded `DynSolValue` into (type, value) pairs for each parameter.
-fn split_types_and_values(
-    param_type: DynSolType,
-    value: DynSolValue,
-) -> Vec<(DynSolType, DynSolValue)> {
-    match (param_type, value) {
-        (DynSolType::Tuple(types), DynSolValue::Tuple(values)) => {
-            let n = types.len().min(values.len());
-            (0..n)
-                .map(|i| (types[i].clone(), values[i].clone()))
-                .collect()
-        }
-        (ty, val) => vec![(ty, val)],
-    }
-}
-
-pub fn format_param_type(kind: &DynSolType) -> String {
-    match kind {
-        DynSolType::Address => "address".to_owned(),
-        DynSolType::Bool => "bool".to_owned(),
-        DynSolType::Uint(n) => format!("uint{n}"),
-        DynSolType::Int(n) => format!("int{n}"),
-        DynSolType::Bytes => "bytes".to_owned(),
-        DynSolType::FixedBytes(n) => format!("bytes{n}"),
-        DynSolType::String => "string".to_owned(),
-        DynSolType::Function => "function".to_owned(),
-        DynSolType::Array(inner) => format!("{}[]", format_param_type(inner)),
-        DynSolType::FixedArray(inner, n) => format!("{}[{n}]", format_param_type(inner)),
-        DynSolType::Tuple(inner) => {
-            let parts: Vec<_> = inner.iter().map(format_param_type).collect();
-            format!("({})", parts.join(","))
-        }
-        #[allow(unreachable_patterns)]
-        _ => kind.to_string(),
-    }
-}
-
 /// Decode a revert reason from raw output bytes (0x-prefixed hex).
 ///
-/// Recognises:
-/// - `Error(string)` — selector `0x08c379a0`
-/// - `Panic(uint256)` — selector `0x4e487b71`
-///
-/// Returns `None` for unknown selectors — use [`decode_custom_revert`] with a
-/// resolver as a fallback.
+/// Recognises `Error(string)` (0x08c379a0) and `Panic(uint256)` (0x4e487b71).
+/// Returns `None` for unknown selectors — use [`decode_custom_revert`] as fallback.
 pub fn decode_revert_reason(output: &str) -> Option<String> {
     let hex = output.strip_prefix("0x").unwrap_or(output);
     if hex.len() < 8 {
         return None;
     }
 
-    let selector = &hex[..8];
     let data = hex::decode(&hex[8..]).ok()?;
 
-    match selector {
-        // Error(string)
-        "08c379a0" => decode_single_param("(string)", &data),
-        // Panic(uint256)
+    match &hex[..8] {
+        "08c379a0" => {
+            let func = Function::parse("Error(string)").ok()?;
+            let values = func.abi_decode_input(&data).ok()?;
+            values.first().map(format_value)
+        }
         "4e487b71" => {
-            let code_str = decode_single_param("(uint256)", &data)?;
+            let func = Function::parse("Panic(uint256)").ok()?;
+            let values = func.abi_decode_input(&data).ok()?;
+            let code_str = format_value(values.first()?);
             let desc = panic_description(&code_str);
             if desc.is_empty() {
                 Some(format!("Panic({code_str})"))
@@ -116,8 +61,7 @@ pub fn decode_revert_reason(output: &str) -> Option<String> {
 
 /// Try to decode a custom error by resolving its 4-byte selector via Sourcify.
 ///
-/// Falls back to returning the raw selector hex if the signature resolves but
-/// the arguments cannot be decoded.
+/// Falls back to returning the raw signature if arguments cannot be decoded.
 pub fn decode_custom_revert(
     output: &str,
     resolver: &mut super::selector_resolver::SelectorResolver,
@@ -128,8 +72,6 @@ pub fn decode_custom_revert(
     }
 
     let selector = &hex[..8];
-
-    // Don't re-resolve built-in selectors
     if selector == "08c379a0" || selector == "4e487b71" {
         return None;
     }
@@ -138,41 +80,11 @@ pub fn decode_custom_revert(
     let signature = resolver.resolve(&prefixed, Some(output))?;
     let name = signature.split('(').next().unwrap_or(&signature);
 
-    // Try to decode arguments
     if let Some(args) = decode_function_args(&signature, output) {
         let formatted: Vec<String> = args.iter().map(|(_, v)| format_value(v)).collect();
         Some(format!("{name}({})", formatted.join(", ")))
     } else {
-        // Resolved the name but can't decode args — still useful
         Some(signature)
-    }
-}
-
-/// ABI-decode a single-param tuple and format the first value.
-fn decode_single_param(type_str: &str, data: &[u8]) -> Option<String> {
-    let ty: DynSolType = type_str.parse().ok()?;
-    let decoded = ty.abi_decode_params(data).ok()?;
-    if let DynSolValue::Tuple(vals) = decoded {
-        vals.first().map(format_value)
-    } else {
-        Some(format_value(&decoded))
-    }
-}
-
-/// Map a Solidity panic code to a human-readable description.
-fn panic_description(code: &str) -> &'static str {
-    match code {
-        "0" => "generic/compiler-inserted",
-        "1" => "assertion failed",
-        "17" => "arithmetic overflow/underflow",
-        "18" => "division or modulo by zero",
-        "33" => "invalid enum conversion",
-        "34" => "invalid storage access",
-        "49" => "pop on empty array",
-        "50" => "out-of-bounds array access",
-        "65" => "out of memory",
-        "81" => "call to zero-initialized function",
-        _ => "",
     }
 }
 
@@ -197,6 +109,40 @@ pub fn format_value(value: &DynSolValue) -> String {
     }
 }
 
+fn decode_hex(input: &str) -> Option<Vec<u8>> {
+    hex::decode(input.strip_prefix("0x").unwrap_or(input)).ok()
+}
+
+fn decode_with_function(signature: &str, data: &[u8]) -> Option<Vec<(DynSolType, DynSolValue)>> {
+    let func = Function::parse(signature).ok()?;
+    let types = resolve_types(&func)?;
+    let values = func.abi_decode_input(data).ok()?;
+    Some(types.into_iter().zip(values).collect())
+}
+
+fn resolve_types(func: &Function) -> Option<Vec<DynSolType>> {
+    func.inputs
+        .iter()
+        .map(|p| p.selector_type().parse().ok())
+        .collect()
+}
+
+fn panic_description(code: &str) -> &'static str {
+    match code {
+        "0" => "generic/compiler-inserted",
+        "1" => "assertion failed",
+        "17" => "arithmetic overflow/underflow",
+        "18" => "division or modulo by zero",
+        "33" => "invalid enum conversion",
+        "34" => "invalid storage access",
+        "49" => "pop on empty array",
+        "50" => "out-of-bounds array access",
+        "65" => "out of memory",
+        "81" => "call to zero-initialized function",
+        _ => "",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,15 +150,16 @@ mod tests {
     #[test]
     fn test_can_decode_valid_transfer() {
         let sig = "transfer(address,uint256)";
-        // transfer(0xdead...beef, 1000)
-        let calldata = "0xa9059cbb000000000000000000000000deadbeefdeadbeefdeadbeefdeadbeefdeadbeef00000000000000000000000000000000000000000000000000000000000003e8";
+        let calldata = "0xa9059cbb\
+            000000000000000000000000deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\
+            00000000000000000000000000000000000000000000000000000000000003e8";
         assert!(can_decode(sig, calldata));
     }
 
     #[test]
-    fn test_can_decode_invalid_calldata() {
+    fn test_can_decode_wrong_signature() {
         let sig = "transfer(address,uint256)";
-        let calldata = "0xa9059cbb00"; // truncated
+        let calldata = "0xa9059cbb00"; // truncated — signature doesn't match data
         assert!(!can_decode(sig, calldata));
     }
 
@@ -233,52 +180,29 @@ mod tests {
     #[test]
     fn test_decode_function_args_transfer() {
         let sig = "transfer(address,uint256)";
-        let calldata = "0xa9059cbb000000000000000000000000deadbeefdeadbeefdeadbeefdeadbeefdeadbeef00000000000000000000000000000000000000000000000000000000000003e8";
-
-        let result = decode_function_args(sig, calldata);
-        assert!(result.is_some());
-
-        let args = result.unwrap();
+        let calldata = "0xa9059cbb\
+            000000000000000000000000deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\
+            00000000000000000000000000000000000000000000000000000000000003e8";
+        let args = decode_function_args(sig, calldata).unwrap();
         assert_eq!(args.len(), 2);
+        assert!(matches!(args[0].0, DynSolType::Address));
+        assert!(matches!(args[1].0, DynSolType::Uint(256)));
     }
 
     #[test]
     fn test_decode_function_args_empty_params() {
         let sig = "pause()";
         let calldata = "0x8456cb59";
-
-        let result = decode_function_args(sig, calldata);
-        assert!(result.is_some());
-        assert!(result.unwrap().is_empty());
+        let result = decode_function_args(sig, calldata).unwrap();
+        assert!(result.is_empty());
     }
 
     #[test]
-    fn test_format_param_type_primitives() {
-        assert_eq!(format_param_type(&DynSolType::Address), "address");
-        assert_eq!(format_param_type(&DynSolType::Bool), "bool");
-        assert_eq!(format_param_type(&DynSolType::Uint(256)), "uint256");
-        assert_eq!(format_param_type(&DynSolType::Int(128)), "int128");
-        assert_eq!(format_param_type(&DynSolType::Bytes), "bytes");
-        assert_eq!(format_param_type(&DynSolType::FixedBytes(32)), "bytes32");
-        assert_eq!(format_param_type(&DynSolType::String), "string");
-    }
-
-    #[test]
-    fn test_format_param_type_arrays() {
-        assert_eq!(
-            format_param_type(&DynSolType::Array(Box::new(DynSolType::Address))),
-            "address[]"
-        );
-        assert_eq!(
-            format_param_type(&DynSolType::FixedArray(Box::new(DynSolType::Uint(256)), 3)),
-            "uint256[3]"
-        );
-    }
-
-    #[test]
-    fn test_format_param_type_tuple() {
-        let tuple = DynSolType::Tuple(vec![DynSolType::Address, DynSolType::Uint(256)]);
-        assert_eq!(format_param_type(&tuple), "(address,uint256)");
+    fn test_decode_returns_none_on_mismatch() {
+        let sig = "registerPool(uint8,address[],address[])";
+        let calldata = "0x6634b753\
+            0000000000000000000000000000000000000000000000000000000000000002";
+        assert!(decode_function_args(sig, calldata).is_none());
     }
 
     #[test]
@@ -305,25 +229,24 @@ mod tests {
 
     #[test]
     fn test_decode_revert_error_string() {
-        // Error("ERC20: transfer amount exceeds balance")
-        // selector 08c379a0 + abi-encoded string
         let output = "0x08c379a0\
             0000000000000000000000000000000000000000000000000000000000000020\
             0000000000000000000000000000000000000000000000000000000000000026\
             45524332303a207472616e7366657220616d6f756e7420657863656564732062\
             616c616e63650000000000000000000000000000000000000000000000000000";
-        let reason = decode_revert_reason(output);
-        assert!(reason.is_some());
-        assert_eq!(reason.unwrap(), "ERC20: transfer amount exceeds balance");
+        assert_eq!(
+            decode_revert_reason(output).unwrap(),
+            "ERC20: transfer amount exceeds balance"
+        );
     }
 
     #[test]
     fn test_decode_revert_panic() {
-        // Panic(0x11) — arithmetic overflow
         let output = "0x4e487b710000000000000000000000000000000000000000000000000000000000000011";
-        let reason = decode_revert_reason(output);
-        assert!(reason.is_some());
-        assert_eq!(reason.unwrap(), "Panic(17: arithmetic overflow/underflow)");
+        assert_eq!(
+            decode_revert_reason(output).unwrap(),
+            "Panic(17: arithmetic overflow/underflow)"
+        );
     }
 
     #[test]
@@ -343,7 +266,6 @@ mod tests {
             reqwest::blocking::Client::new(),
             false,
         );
-        // Error(string) selector should be skipped by decode_custom_revert
         let output = "0x08c379a0\
             0000000000000000000000000000000000000000000000000000000000000020\
             0000000000000000000000000000000000000000000000000000000000000005\
@@ -353,7 +275,6 @@ mod tests {
 
     #[test]
     fn test_decode_custom_revert_unknown_no_resolver() {
-        // Resolver is disabled, so unknown selectors can't be resolved
         let mut resolver = crate::utils::selector_resolver::SelectorResolver::new(
             reqwest::blocking::Client::new(),
             false,
