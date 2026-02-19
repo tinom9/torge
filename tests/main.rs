@@ -254,7 +254,7 @@ fn test_clean_removes_entire_cache() {
 #[derive(Debug, Deserialize)]
 struct CallTestCase {
     name: String,
-    to: String,
+    to: Option<String>,
     data: String,
     from: Option<String>,
     value: Option<String>,
@@ -291,13 +291,18 @@ fn run_call_test(test_case: &CallTestCase, expected_file: &str, mode: TestMode) 
     let binary_path = assert_cmd::cargo::cargo_bin!("torge");
     let mut cmd = Command::new(binary_path);
 
-    cmd.arg("call")
-        .arg(&test_case.to)
-        .arg(&test_case.data)
-        .arg("-r")
+    cmd.arg("call");
+
+    // Positional args: [TO] <DATA>.
+    if let Some(to) = &test_case.to {
+        cmd.arg(to).arg(&test_case.data);
+    } else {
+        cmd.arg("--create").arg(&test_case.data);
+    }
+
+    cmd.arg("-r")
         .arg(rpc_server.url())
         .env("TORGE_DISABLE_CACHE", "1");
-
     if let Some(from) = &test_case.from {
         cmd.arg("--from").arg(from);
     }

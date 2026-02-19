@@ -3,13 +3,22 @@ use crate::utils::value_parser;
 use clap::Parser;
 use serde_json::json;
 
+/// Positional arguments: `[TO] <DATA>`.
+///
+/// - With `--create`: expects 1 arg (DATA only).
+/// - Without `--create`: expects 2 args (TO and DATA).
 #[derive(Parser, Debug)]
+#[command(
+    override_usage = "torge call [OPTIONS] [TO] <DATA>\n       torge call [OPTIONS] --create <DATA>"
+)]
 pub struct CallArgs {
-    /// Target contract address (0x-prefixed).
-    pub to: String,
+    /// Positional arguments: `[TO] <DATA>` or `<DATA>` with `--create`.
+    #[arg(num_args = 1..=2, value_name = "[TO] <DATA>")]
+    pub args: Vec<String>,
 
-    /// Calldata hex (0x-prefixed).
-    pub data: String,
+    /// Simulate a contract creation transaction (no `to` address).
+    #[arg(long)]
+    pub create: bool,
 
     /// Sender address for the simulated call (defaults to zero address).
     #[arg(long)]
@@ -40,19 +49,61 @@ pub struct CallArgs {
     pub opts: TraceOpts,
 }
 
+/// Parsed positional arguments for the call command.
+struct ParsedArgs {
+    to: Option<String>,
+    data: String,
+}
+
+/// Parse positional arguments based on count and `--create` flag.
+///
+/// - With `--create`: expects 1 arg (DATA).
+/// - Without `--create`: expects 2 args (TO, DATA).
+fn parse_positional_args(args: &CallArgs) -> Result<ParsedArgs, TraceError> {
+    match (args.create, args.args.len()) {
+        (true, 1) => Ok(ParsedArgs {
+            to: None,
+            data: args.args[0].clone(),
+        }),
+        (true, 2) => Err(TraceError::InvalidInput(
+            "--create cannot be used with a TO address".to_string(),
+        )),
+        (true, _) => Err(TraceError::InvalidInput(
+            "expected exactly 1 argument (DATA) when using --create".to_string(),
+        )),
+        (false, 2) => Ok(ParsedArgs {
+            to: Some(args.args[0].clone()),
+            data: args.args[1].clone(),
+        }),
+        (false, 1) => Err(TraceError::InvalidInput(
+            "missing DATA argument; use --create for contract creation or provide both TO and DATA"
+                .to_string(),
+        )),
+        (false, _) => Err(TraceError::InvalidInput(
+            "expected 2 arguments: TO and DATA".to_string(),
+        )),
+    }
+}
+
 pub fn run(args: CallArgs) -> Result<(), TraceError> {
-    trace::validate_address(&args.to, "--to")?;
-    trace::validate_hex(&args.data, "--data")?;
+    let parsed = parse_positional_args(&args)?;
+
+    if let Some(to) = &parsed.to {
+        trace::validate_address(to, "TO")?;
+    }
+    trace::validate_hex(&parsed.data, "DATA")?;
     if let Some(from) = &args.from {
         trace::validate_address(from, "--from")?;
     }
     let block_id = parse_block_id(&args.block)?;
 
     let mut tx_object = json!({
-        "to": args.to,
-        "data": args.data,
+        "data": parsed.data,
     });
 
+    if let Some(to) = &parsed.to {
+        tx_object["to"] = json!(to);
+    }
     if let Some(from) = &args.from {
         tx_object["from"] = json!(from);
     }
