@@ -1,5 +1,5 @@
 Traces:
-[342983] 0xBd770416a3345F91E4B34576cb804a576fa48EB1::0x60a06040 [create]
+[342983] 0xBd770416a3345F91E4B34576cb804a576fa48EB1 [create]
     ↳ error: execution reverted — call to non-contract address 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF
     └─ [315720] 0xcC865B0324121b43728176024f58bdbB3afd6f29::0xd29bd22b [delegatecall]
         ↳ error: execution reverted — call to non-contract address 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF

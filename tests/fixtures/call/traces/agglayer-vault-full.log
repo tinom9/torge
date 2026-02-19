@@ -1,5 +1,5 @@
 Traces:
-[342983] 0xBd770416a3345F91E4B34576cb804a576fa48EB1::0x60a06040 [create]
+[342983] 0xBd770416a3345F91E4B34576cb804a576fa48EB1 [create]
     ↳ error: execution reverted — call to non-contract address 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF
     ├─ emit Upgraded(param0: 0xcc865b0324121b43728176024f58bdbb3afd6f29)
     data: 0x60a0604052610b05803803806100148161026b565b92833981016060828203126102675761002c82610290565b

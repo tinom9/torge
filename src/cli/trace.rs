@@ -280,7 +280,14 @@ fn print_call(
     let mut decoded: Option<Vec<(DynSolType, DynSolValue)>> = None;
     let mut decode_attempted = false;
 
-    let (display_addr, sig) = if let Some((_name, signature)) = precompile {
+    let is_create = node
+        .call_type
+        .as_deref()
+        .is_some_and(|t| t.eq_ignore_ascii_case("CREATE") || t.eq_ignore_ascii_case("CREATE2"));
+
+    let (display_addr, sig) = if is_create {
+        (to, String::new())
+    } else if let Some((_name, signature)) = precompile {
         if resolver.is_enabled() {
             if include_args {
                 if let Some(input_hex) = node.input.as_deref() {
