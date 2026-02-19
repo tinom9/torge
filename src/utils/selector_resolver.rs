@@ -159,7 +159,7 @@ fn select_best_entry(entries: &[serde_json::Value], calldata: Option<&str>) -> O
             })
             .or_else(|| entries.iter().find(|e| decodable(e)))
             .or_else(|| entries.first())
-            .and_then(&name)
+            .and_then(name)
     } else {
         entries.first().and_then(name)
     }
