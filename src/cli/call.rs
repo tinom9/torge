@@ -20,7 +20,7 @@ pub struct CallArgs {
     #[arg(long)]
     pub create: bool,
 
-    /// Sender address for the simulated call (defaults to zero address).
+    /// Sender address for the simulated call.
     #[arg(long)]
     pub from: Option<String>,
 
@@ -150,7 +150,7 @@ fn parse_block_id(block: &str) -> Result<String, TraceError> {
                     "--block: invalid hex block number '{s}'"
                 )));
             }
-            Ok(format!("0x{hex}"))
+            Ok(format!("0x{}", hex.to_ascii_lowercase()))
         }
         s => {
             let num: u64 = s.parse().map_err(|_| {
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_parse_block_id_hex() {
-        assert_eq!(parse_block_id("0xBC614E").unwrap(), "0xBC614E");
+        assert_eq!(parse_block_id("0xBC614E").unwrap(), "0xbc614e");
         assert_eq!(parse_block_id("0x0").unwrap(), "0x0");
     }
 
