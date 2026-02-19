@@ -1,0 +1,6 @@
+Traces:
+[809040] 0xc4441c2be5d8fa8126822b9929ca0b81ea0de38e [create]
+    ├─ [155330] 0x2b65f9d2e4b84a2df6ff0525741b75d1276a9c2f::0x90657147 [delegatecall]
+    │   └─ [7504] 0x0594cb5ca47efe1ff25c7b8b43e221683b4db34c::0xe16c7d98 [staticcall]
+    │       └─ [2562] 0x81221180b4b2fc01975817d4b7e1f4adadcf8388::0xe16c7d98 [delegatecall]
+    └─ [230399] 0x430a2712cefaac8cb66e9cb29ff267cfcfa38a42 [create]
