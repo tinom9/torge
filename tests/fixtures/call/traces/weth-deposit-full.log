@@ -1,4 +1,4 @@
 Traces:
-[27938] 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2::deposit{value: 1000000000000000000}() [call]
+[27938] WETH9::deposit{value: 1000000000000000000}() [call]
     └─ emit Deposit(param0: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045, param1: 1000000000000000000)
     data: 0xd0e30db0

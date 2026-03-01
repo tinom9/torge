@@ -1,6 +1,7 @@
 use crate::utils::{
     abi_decoder,
     color::Palette,
+    contract_resolver::ContractResolver,
     event_formatter::{print_log, Log},
     hex_utils, precompiles, rpc_url,
     selector_resolver::SelectorResolver,
@@ -30,6 +31,14 @@ pub struct TraceOpts {
     /// text signatures like `transfer(address,uint256)`.
     #[arg(long)]
     pub resolve_selectors: bool,
+
+    /// Resolve contract addresses to names via Sourcify's v2 API (best-effort).
+    ///
+    /// When enabled, the tool will try to replace contract addresses with
+    /// their verified contract names (e.g. `TetherToken` instead of `0xdAC1…`).
+    /// Requires an `eth_chainId` RPC call to determine the network.
+    #[arg(long)]
+    pub resolve_contracts: bool,
 
     /// Decode and display call arguments using the resolved function signature.
     ///
@@ -170,6 +179,43 @@ pub fn validate_hex(data: &str, field: &str) -> Result<(), TraceError> {
     Ok(())
 }
 
+/// Fetch the chain ID from the RPC node as a decimal string (e.g. `"1"`).
+fn fetch_chain_id(client: &Client, rpc_url: &str) -> Result<String, TraceError> {
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_chainId",
+        "params": []
+    });
+
+    let resp = client.post(rpc_url).json(&payload).send()?;
+    let body: RpcResponse<String> = resp
+        .json()
+        .map_err(|e| TraceError::Decode(format!("eth_chainId: invalid JSON: {e}")))?;
+
+    if let Some(err) = body.error {
+        return Err(TraceError::Rpc(err.message, err.code));
+    }
+
+    let hex_str = body
+        .result
+        .ok_or_else(|| TraceError::Decode("eth_chainId: missing result".into()))?;
+
+    parse_chain_id_hex(&hex_str)
+}
+
+/// Parse a hex chain ID (e.g. `"0x1"`, `"0xa"`) into a decimal string.
+fn parse_chain_id_hex(hex_str: &str) -> Result<String, TraceError> {
+    let stripped = hex_str
+        .strip_prefix("0x")
+        .or_else(|| hex_str.strip_prefix("0X"))
+        .ok_or_else(|| TraceError::Decode(format!("eth_chainId: invalid hex '{hex_str}'")))?;
+
+    u64::from_str_radix(stripped, 16)
+        .map(|n| n.to_string())
+        .map_err(|_| TraceError::Decode(format!("eth_chainId: invalid hex '{hex_str}'")))
+}
+
 /// Send an RPC payload, parse the trace response, and print it.
 pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result<(), TraceError> {
     if opts.include_args && !opts.resolve_selectors {
@@ -178,6 +224,18 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
 
     let rpc_url = resolve_rpc_url(opts.rpc_url)?;
     let client = create_client(opts.no_proxy)?;
+
+    let chain_id = if opts.resolve_contracts {
+        match fetch_chain_id(&client, &rpc_url) {
+            Ok(id) => Some(id),
+            Err(e) => {
+                eprintln!("warning: could not fetch chain ID, contract resolution disabled: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let resp = client.post(&rpc_url).json(payload).send()?;
 
@@ -189,10 +247,12 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
         Palette::auto()
     };
 
-    let mut resolver = SelectorResolver::new(client, opts.resolve_selectors);
+    let mut selector_resolver = SelectorResolver::new(client.clone(), opts.resolve_selectors);
+    let mut contract_resolver = ContractResolver::new(client, chain_id, opts.resolve_contracts);
     print_trace(
         &call_trace,
-        &mut resolver,
+        &mut selector_resolver,
+        &mut contract_resolver,
         opts.include_args,
         opts.include_calldata,
         opts.include_logs,
@@ -229,6 +289,7 @@ fn parse_rpc_response(resp: reqwest::blocking::Response) -> Result<CallTrace, Tr
 fn print_trace(
     root: &CallTrace,
     resolver: &mut SelectorResolver,
+    contract_resolver: &mut ContractResolver,
     include_args: bool,
     include_calldata: bool,
     include_logs: bool,
@@ -240,6 +301,7 @@ fn print_trace(
         "",
         true,
         resolver,
+        contract_resolver,
         include_args,
         include_calldata,
         include_logs,
@@ -257,6 +319,7 @@ fn print_call(
     prefix: &str,
     is_last: bool,
     resolver: &mut SelectorResolver,
+    contract_resolver: &mut ContractResolver,
     include_args: bool,
     include_calldata: bool,
     include_logs: bool,
@@ -284,6 +347,12 @@ fn print_call(
         .call_type
         .as_deref()
         .is_some_and(|t| t.eq_ignore_ascii_case("CREATE") || t.eq_ignore_ascii_case("CREATE2"));
+
+    let resolved_name = if !is_create && precompile.is_none() {
+        contract_resolver.resolve(to)
+    } else {
+        None
+    };
 
     let (display_addr, sig) = if is_create {
         (to, String::new())
@@ -320,7 +389,8 @@ fn print_call(
             "0x".to_string()
         };
 
-        (to, sig)
+        let addr = resolved_name.as_deref().unwrap_or(to);
+        (addr, sig)
     };
 
     let call_desc = format_call_desc(display_addr, &sig, value, pal);
@@ -432,6 +502,7 @@ fn print_call(
             &child_prefix,
             is_last_item,
             resolver,
+            contract_resolver,
             include_args,
             include_calldata,
             include_logs,
@@ -554,5 +625,15 @@ mod tests {
         assert!(validate_hex("0xGGGG", "data").is_err());
         assert!(validate_hex("0xabc", "data").is_err()); // odd length
         assert!(validate_hex("0xab", "data").is_ok());
+    }
+
+    #[test]
+    fn test_parse_chain_id_hex() {
+        assert_eq!(parse_chain_id_hex("0x1").unwrap(), "1");
+        assert_eq!(parse_chain_id_hex("0xa").unwrap(), "10");
+        assert_eq!(parse_chain_id_hex("0xa4b1").unwrap(), "42161");
+        assert_eq!(parse_chain_id_hex("0x89").unwrap(), "137");
+        assert!(parse_chain_id_hex("1").is_err());
+        assert!(parse_chain_id_hex("0xZZ").is_err());
     }
 }

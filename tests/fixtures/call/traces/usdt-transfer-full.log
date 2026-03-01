@@ -1,5 +1,5 @@
 Traces:
-[46097] 0xdac17f958d2ee523a2206206994597c13d831ec7::transfer(address,uint256) [call]
+[46097] TetherToken::transfer(address,uint256) [call]
     └─ emit Transfer(param0: 0x47ac0fb4f2d84898e4d9e7b4dab3c24507a6d503, param1: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045, param2: 1000000000)
     args:
     [0] address = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045

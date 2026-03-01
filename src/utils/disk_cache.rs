@@ -1,9 +1,22 @@
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
-/// Marker value stored in cache to indicate a selector was not found in Sourcify.
-pub const CACHE_MISS_MARKER: &str = "<UNKNOWN>";
+const CACHE_MISS_MARKER: &str = "<UNKNOWN>";
+
+/// Result of looking up a key in the cache.
+#[derive(Debug)]
+pub enum CacheLookup<'a> {
+    /// Key found and resolved to a value.
+    Hit(&'a str),
+    /// Key was previously looked up but not found upstream.
+    Miss,
+    /// Key not present in cache — requires a network lookup.
+    NotCached,
+}
 
 #[derive(Debug, Error)]
 pub enum CacheError {
@@ -15,50 +28,74 @@ pub enum CacheError {
     Json(#[from] serde_json::Error),
 }
 
-/// Disk cache for selector lookups.
-#[derive(Serialize, Deserialize, Default)]
+/// Reusable disk-backed key-value cache.
+///
+/// Each cache instance is identified by a `kind` (e.g. `"selectors"`, `"contracts"`).
+/// The kind determines both the file name (`{kind}.json`) and the top-level JSON key
+/// used for serialization, keeping backward compatibility with existing cache files.
 pub struct DiskCache {
-    selectors: HashMap<String, String>,
+    entries: HashMap<String, String>,
+    kind: String,
+    dirty: bool,
+    disabled: bool,
 }
 
 impl DiskCache {
-    /// Get the path to the cache file.
+    /// Get the path to a cache file for the given `kind`.
     ///
     /// Respects `XDG_CACHE_HOME` on all platforms (not just Linux) so that
     /// integration tests using a temp directory work on macOS/Windows too.
-    pub fn cache_path() -> Option<PathBuf> {
+    pub fn cache_path(kind: &str) -> Option<PathBuf> {
         let base = std::env::var("XDG_CACHE_HOME")
             .ok()
             .map(PathBuf::from)
             .or_else(dirs::cache_dir)?;
-        Some(base.join("torge").join("selectors.json"))
+        Some(base.join("torge").join(format!("{kind}.json")))
     }
 
-    fn is_disabled() -> bool {
-        std::env::var("TORGE_DISABLE_CACHE").is_ok()
-    }
-
-    pub fn load() -> Self {
-        if Self::is_disabled() {
-            return Self::default();
-        }
-
-        let Some(path) = Self::cache_path() else {
-            return Self::default();
+    pub fn load(kind: &str) -> Self {
+        let disabled = std::env::var("TORGE_DISABLE_CACHE").is_ok();
+        let empty = Self {
+            entries: HashMap::new(),
+            kind: kind.to_owned(),
+            dirty: false,
+            disabled,
         };
 
-        match fs::read_to_string(&path) {
-            Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
-            Err(_) => Self::default(),
+        if disabled {
+            return empty;
         }
+
+        let Some(path) = Self::cache_path(kind) else {
+            return empty;
+        };
+
+        let entries = Self::read_entries(&path, kind).unwrap_or_default();
+
+        Self {
+            entries,
+            kind: kind.to_owned(),
+            dirty: false,
+            disabled: false,
+        }
+    }
+
+    fn read_entries(path: &Path, kind: &str) -> Result<HashMap<String, String>, CacheError> {
+        let contents = fs::read_to_string(path)?;
+        let mut raw: serde_json::Value = serde_json::from_str(&contents)?;
+        Ok(raw
+            .as_object_mut()
+            .and_then(|m| m.remove(kind))
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default())
     }
 
     pub fn save(&self) {
-        if Self::is_disabled() {
+        if self.disabled {
             return;
         }
 
-        let Some(path) = Self::cache_path() else {
+        let Some(path) = Self::cache_path(&self.kind) else {
             return;
         };
 
@@ -66,48 +103,59 @@ impl DiskCache {
             let _ = fs::create_dir_all(parent);
         }
 
-        let contents = match serde_json::to_string_pretty(self) {
+        let wrapper = serde_json::json!({ &self.kind: &self.entries });
+        let contents = match serde_json::to_string_pretty(&wrapper) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("warning: failed to serialize selector cache: {e}");
+                eprintln!("warning: failed to serialize {} cache: {e}", self.kind);
                 return;
             }
         };
 
-        // Atomic write: write to temp file then rename into place.
         let tmp_path = path.with_extension("json.tmp");
         if let Err(e) = fs::write(&tmp_path, contents) {
-            eprintln!("warning: failed to write selector cache: {e}");
+            eprintln!("warning: failed to write {} cache: {e}", self.kind);
             return;
         }
         if let Err(e) = fs::rename(&tmp_path, &path) {
-            eprintln!("warning: failed to rename selector cache: {e}");
+            eprintln!("warning: failed to rename {} cache: {e}", self.kind);
         }
     }
 
-    pub fn get(&self, selector: &str) -> Option<&str> {
-        self.selectors.get(selector).map(String::as_str)
+    /// Look up a key, distinguishing between a resolved hit, a cached miss, and not-in-cache.
+    pub fn lookup(&self, key: &str) -> CacheLookup<'_> {
+        match self.entries.get(key) {
+            Some(v) if v == CACHE_MISS_MARKER => CacheLookup::Miss,
+            Some(v) => CacheLookup::Hit(v),
+            None => CacheLookup::NotCached,
+        }
     }
 
-    pub fn insert(&mut self, selector: String, signature: String) {
-        self.selectors.insert(selector, signature);
+    pub fn insert(&mut self, key: String, value: String) {
+        self.entries.insert(key, value);
+        self.dirty = true;
     }
 
-    /// Remove all unknown (unresolved) selectors from the persisted cache.
+    pub fn insert_miss(&mut self, key: String) {
+        self.insert(key, CACHE_MISS_MARKER.to_owned());
+    }
+
+    /// Remove all unknown (unresolved) entries from the persisted cache.
     /// Returns `(kept, removed)` counts.
-    pub fn remove_unknown() -> Result<(usize, usize), CacheError> {
-        let path = Self::cache_path().ok_or(CacheError::NoCacheDir)?;
+    pub fn remove_unknown(kind: &str) -> Result<(usize, usize), CacheError> {
+        let path = Self::cache_path(kind).ok_or(CacheError::NoCacheDir)?;
         if !path.exists() {
             return Ok((0, 0));
         }
-        let contents = fs::read_to_string(&path)?;
-        let mut cache: DiskCache = serde_json::from_str(&contents)?;
 
-        let before = cache.selectors.len();
-        cache.selectors.retain(|_, v| v != CACHE_MISS_MARKER);
-        let after = cache.selectors.len();
+        let mut entries = Self::read_entries(&path, kind)?;
 
-        let json = serde_json::to_string_pretty(&cache)?;
+        let before = entries.len();
+        entries.retain(|_, v| v != CACHE_MISS_MARKER);
+        let after = entries.len();
+
+        let wrapper = serde_json::json!({ kind: &entries });
+        let json = serde_json::to_string_pretty(&wrapper)?;
         let tmp_path = path.with_extension("json.tmp");
         fs::write(&tmp_path, json)?;
         fs::rename(&tmp_path, &path)?;
@@ -116,42 +164,46 @@ impl DiskCache {
     }
 }
 
+impl Drop for DiskCache {
+    fn drop(&mut self) {
+        if self.dirty {
+            self.save();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_default_cache_is_empty() {
-        let cache = DiskCache::default();
-        assert!(cache.get("0x12345678").is_none());
+    fn empty_cache() -> DiskCache {
+        DiskCache {
+            entries: HashMap::new(),
+            kind: "test".to_owned(),
+            dirty: false,
+            disabled: true,
+        }
     }
 
     #[test]
-    fn test_insert_and_get() {
-        let mut cache = DiskCache::default();
+    fn test_insert_and_lookup() {
+        let mut cache = empty_cache();
         cache.insert(
             "0x12345678".to_owned(),
             "transfer(address,uint256)".to_owned(),
         );
 
-        assert_eq!(cache.get("0x12345678"), Some("transfer(address,uint256)"));
-        assert!(cache.get("0xdeadbeef").is_none());
+        match cache.lookup("0x12345678") {
+            CacheLookup::Hit(sig) => assert_eq!(sig, "transfer(address,uint256)"),
+            other => panic!("expected Hit, got {other:?}"),
+        }
+        assert!(matches!(cache.lookup("0xdeadbeef"), CacheLookup::NotCached));
     }
 
     #[test]
-    fn test_cache_miss_marker_persistence() {
-        let mut cache = DiskCache::default();
-        cache.insert("0xdeadbeef".to_owned(), CACHE_MISS_MARKER.to_owned());
-
-        assert_eq!(cache.get("0xdeadbeef"), Some(CACHE_MISS_MARKER));
-    }
-
-    #[test]
-    fn test_overwrite_existing_entry() {
-        let mut cache = DiskCache::default();
-        cache.insert("0x12345678".to_owned(), "oldSignature()".to_owned());
-        cache.insert("0x12345678".to_owned(), "newSignature(uint256)".to_owned());
-
-        assert_eq!(cache.get("0x12345678"), Some("newSignature(uint256)"));
+    fn test_insert_miss_and_lookup() {
+        let mut cache = empty_cache();
+        cache.insert_miss("0xdeadbeef".to_owned());
+        assert!(matches!(cache.lookup("0xdeadbeef"), CacheLookup::Miss));
     }
 }

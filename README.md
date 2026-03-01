@@ -45,10 +45,16 @@ With selector resolution:
 torge tx 0x1234...abcd --rpc-url http://localhost:8545 --resolve-selectors
 ```
 
-With argument decoding, calldata, and events:
+With contract name resolution (replaces addresses with verified names via Sourcify):
 
 ```bash
-torge tx 0x1234...abcd --resolve-selectors --include-args --include-calldata --include-logs
+torge tx 0x1234...abcd --rpc-url http://localhost:8545 --resolve-contracts
+```
+
+With all resolution options, argument decoding, calldata, and events:
+
+```bash
+torge tx 0x1234...abcd --resolve-selectors --resolve-contracts --include-args --include-calldata --include-logs
 ```
 
 ### `torge call` — Simulate a call
@@ -82,19 +88,25 @@ Simulate a contract creation:
 torge call --create 0x6080604052... --rpc-url http://localhost:8545
 ```
 
-### `torge clean` — Manage selector cache
+With contract name resolution for a simulated call:
+
+```bash
+torge call 0xdead...beef 0xa9059cbb... --rpc-url http://localhost:8545 --resolve-contracts
+```
+
+### `torge clean` — Manage cache
 
 ```bash
 torge clean [OPTIONS]
 ```
 
-Clear the entire selector cache:
+Clear the entire cache (selectors and contracts):
 
 ```bash
 torge clean
 ```
 
-Remove only unresolved selectors (retry on next lookup):
+Remove only unresolved entries (retry on next lookup):
 
 ```bash
 torge clean --only-unknown
