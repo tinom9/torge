@@ -220,7 +220,7 @@ fn apply_mode_flags(cmd: &mut Command, mode: TestMode, env: &TestEnv) {
                 .arg("--resolve-contracts")
                 .arg("--include-args")
                 .arg("--include-calldata")
-                .env("SOURCIFY_URL", format!("{}/", env.sourcify_url))
+                .env("SOURCIFY_4BYTE_URL", format!("{}/", env.sourcify_url))
                 .env("SOURCIFY_SERVER_URL", format!("{}/", env.sourcify_v2_url));
         }
     }
