@@ -60,7 +60,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hex() {
+    fn test_parse_value_hex() {
         assert_eq!(
             parse_value("0xde0b6b3a7640000").unwrap(),
             "0xde0b6b3a7640000"
@@ -69,13 +69,13 @@ mod tests {
     }
 
     #[test]
-    fn test_decimal() {
+    fn test_parse_value_decimal() {
         assert_eq!(parse_value("1000000").unwrap(), "0xf4240");
         assert_eq!(parse_value("0").unwrap(), "0x0");
     }
 
     #[test]
-    fn test_ether() {
+    fn test_parse_value_ether() {
         assert_eq!(parse_value("1ether").unwrap(), "0xde0b6b3a7640000");
         assert_eq!(parse_value("0.000000000000000001ether").unwrap(), "0x1");
 
@@ -85,13 +85,13 @@ mod tests {
     }
 
     #[test]
-    fn test_gwei() {
+    fn test_parse_value_gwei() {
         assert_eq!(parse_value("1gwei").unwrap(), "0x3b9aca00");
         assert_eq!(parse_value("100gwei").unwrap(), "0x174876e800");
     }
 
     #[test]
-    fn test_wei() {
+    fn test_parse_value_wei() {
         assert_eq!(parse_value("1wei").unwrap(), "0x1");
         assert_eq!(parse_value("1000000000wei").unwrap(), "0x3b9aca00");
     }
@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid() {
+    fn test_parse_value_invalid() {
         assert!(parse_value("abc").is_err());
         assert!(parse_value("1.2.3ether").is_err());
     }
