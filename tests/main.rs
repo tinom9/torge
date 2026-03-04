@@ -136,29 +136,44 @@ fn setup_rpc_mock(server: &mut Server, rpc_response: &serde_json::Value) -> mock
 fn setup_rpc_with_chain_id_mock(
     server: &mut Server,
     rpc_response: &serde_json::Value,
-) -> (mockito::Mock, mockito::Mock) {
+    prestate_response: Option<&serde_json::Value>,
+) -> Vec<mockito::Mock> {
     let chain_id_response = json!({ "jsonrpc": "2.0", "id": 1, "result": "0x1" });
+    let mut mocks = Vec::new();
 
-    // reqwest serializes compact JSON, so the method field is "method":"debug_trace…".
-    // Matching the field name + value avoids false positives if the bare string ever
-    // appears inside calldata or other request parameters.
-    let rpc_mock = server
-        .mock("POST", "/")
-        .match_body(Matcher::Regex(r#""method":"debug_trace"#.to_string()))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(serde_json::to_string(rpc_response).unwrap())
-        .create();
+    mocks.push(
+        server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(r#""tracer":"callTracer""#.to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(rpc_response).unwrap())
+            .create(),
+    );
 
-    let chain_id_mock = server
-        .mock("POST", "/")
-        .match_body(Matcher::Regex(r#""method":"eth_chainId""#.to_string()))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(chain_id_response.to_string())
-        .create();
+    if let Some(ps_response) = prestate_response {
+        mocks.push(
+            server
+                .mock("POST", "/")
+                .match_body(Matcher::Regex(r#""tracer":"prestateTracer""#.to_string()))
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(serde_json::to_string(ps_response).unwrap())
+                .create(),
+        );
+    }
 
-    (rpc_mock, chain_id_mock)
+    mocks.push(
+        server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(r#""method":"eth_chainId""#.to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(chain_id_response.to_string())
+            .create(),
+    );
+
+    mocks
 }
 
 fn load_trace_file(dir: &str, filename: &str) -> String {
@@ -176,7 +191,11 @@ struct TestEnv {
     _servers: Vec<ServerGuard>,
 }
 
-fn setup_test_env(rpc_response: &serde_json::Value, mode: TestMode) -> TestEnv {
+fn setup_test_env(
+    rpc_response: &serde_json::Value,
+    prestate_response: Option<&serde_json::Value>,
+    mode: TestMode,
+) -> TestEnv {
     let mut rpc_server = Server::new();
     let mut sourcify_server = Server::new();
     let mut sourcify_v2_server = Server::new();
@@ -187,9 +206,11 @@ fn setup_test_env(rpc_response: &serde_json::Value, mode: TestMode) -> TestEnv {
 
     let mut mocks: Vec<mockito::Mock> = Vec::new();
     if matches!(mode, TestMode::Full) {
-        let (rpc_mock, chain_id_mock) = setup_rpc_with_chain_id_mock(&mut rpc_server, rpc_response);
-        mocks.push(rpc_mock);
-        mocks.push(chain_id_mock);
+        mocks.extend(setup_rpc_with_chain_id_mock(
+            &mut rpc_server,
+            rpc_response,
+            prestate_response,
+        ));
         mocks.extend(setup_sourcify_mock(&mut sourcify_server, &load_selectors()));
         mocks.extend(setup_sourcify_v2_mock(
             &mut sourcify_v2_server,
@@ -220,6 +241,7 @@ fn apply_mode_flags(cmd: &mut Command, mode: TestMode, env: &TestEnv) {
                 .arg("--resolve-contracts")
                 .arg("--include-args")
                 .arg("--include-calldata")
+                .arg("--include-storage")
                 .env("SOURCIFY_4BYTE_URL", format!("{}/", env.sourcify_url))
                 .env("SOURCIFY_SERVER_URL", format!("{}/", env.sourcify_v2_url));
         }
@@ -252,6 +274,7 @@ struct TxTestCase {
     name: String,
     tx_hash: String,
     rpc_response: serde_json::Value,
+    prestate_response: Option<serde_json::Value>,
     expected_trace: String,
     expected_trace_logs: Option<String>,
     expected_trace_full: Option<String>,
@@ -266,7 +289,11 @@ fn load_tx_fixtures() -> Vec<TxTestCase> {
 fn run_tx_test(test_case: &TxTestCase, expected_file: &str, mode: TestMode) {
     let traces_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tx/traces");
     let expected_output = load_trace_file(traces_dir, expected_file);
-    let env = setup_test_env(&test_case.rpc_response, mode);
+    let env = setup_test_env(
+        &test_case.rpc_response,
+        test_case.prestate_response.as_ref(),
+        mode,
+    );
 
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("torge"));
     cmd.arg("tx")
@@ -316,6 +343,7 @@ struct CallTestCase {
     from: Option<String>,
     value: Option<String>,
     rpc_response: serde_json::Value,
+    prestate_response: Option<serde_json::Value>,
     expected_trace: String,
     expected_trace_logs: Option<String>,
     expected_trace_full: Option<String>,
@@ -330,7 +358,11 @@ fn load_call_fixtures() -> Vec<CallTestCase> {
 fn run_call_test(test_case: &CallTestCase, expected_file: &str, mode: TestMode) {
     let traces_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/call/traces");
     let expected_output = load_trace_file(traces_dir, expected_file);
-    let env = setup_test_env(&test_case.rpc_response, mode);
+    let env = setup_test_env(
+        &test_case.rpc_response,
+        test_case.prestate_response.as_ref(),
+        mode,
+    );
 
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("torge"));
     cmd.arg("call");
@@ -376,6 +408,127 @@ fn test_call_full_trace_outputs() {
             run_call_test(&tc, f, TestMode::Full);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// storage-diff edge-case tests
+// ---------------------------------------------------------------------------
+
+/// Basic-mode output must never contain storage diffs, even when the fixture
+/// carries a `prestate_response`. The flag is absent, so no prestate RPC call
+/// should be made.
+#[test]
+fn test_tx_basic_mode_omits_storage_changes() {
+    let fixtures = load_tx_fixtures();
+    let tc = fixtures
+        .iter()
+        .find(|tc| tc.prestate_response.is_some())
+        .expect("need at least one fixture with prestate_response");
+
+    let env = setup_test_env(&tc.rpc_response, None, TestMode::Basic);
+
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("torge"));
+    cmd.arg("tx")
+        .arg(&tc.tx_hash)
+        .arg("-r")
+        .arg(&env.rpc_url)
+        .env("TORGE_DISABLE_CACHE", "1");
+
+    let output = cmd.output().expect("failed to run");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("Storage changes:"),
+        "basic mode must not include storage diffs"
+    );
+}
+
+/// When the prestateTracer RPC call fails, the tool should still succeed and
+/// print the call trace. The storage diff warning goes to stderr.
+#[test]
+fn test_tx_prestate_rpc_failure_degrades_gracefully() {
+    let fixtures = load_tx_fixtures();
+    let tc = fixtures
+        .iter()
+        .find(|tc| tc.prestate_response.is_some())
+        .expect("need at least one fixture with prestate_response");
+
+    let mut rpc_server = Server::new();
+    let mut sourcify_server = Server::new();
+    let mut sourcify_v2_server = Server::new();
+
+    let rpc_url = rpc_server.url();
+    let sourcify_url = sourcify_server.url();
+    let sourcify_v2_url = sourcify_v2_server.url();
+
+    let chain_id_response = json!({ "jsonrpc": "2.0", "id": 1, "result": "0x1" });
+
+    let calltrace_mock = rpc_server
+        .mock("POST", "/")
+        .match_body(Matcher::Regex(r#""tracer":"callTracer""#.to_string()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&tc.rpc_response).unwrap())
+        .create();
+
+    let prestate_mock = rpc_server
+        .mock("POST", "/")
+        .match_body(Matcher::Regex(r#""tracer":"prestateTracer""#.to_string()))
+        .with_status(500)
+        .with_body("internal server error")
+        .create();
+
+    let chain_id_mock = rpc_server
+        .mock("POST", "/")
+        .match_body(Matcher::Regex(r#""method":"eth_chainId""#.to_string()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(chain_id_response.to_string())
+        .create();
+
+    let selector_mocks = setup_sourcify_mock(&mut sourcify_server, &load_selectors());
+    let contract_mocks = setup_sourcify_v2_mock(&mut sourcify_v2_server, &load_contracts());
+
+    let _mocks = (
+        calltrace_mock,
+        prestate_mock,
+        chain_id_mock,
+        selector_mocks,
+        contract_mocks,
+    );
+    let _servers = vec![rpc_server, sourcify_server, sourcify_v2_server];
+
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("torge"));
+    cmd.arg("tx")
+        .arg(&tc.tx_hash)
+        .arg("-r")
+        .arg(&rpc_url)
+        .arg("--include-logs")
+        .arg("--resolve-selectors")
+        .arg("--resolve-contracts")
+        .arg("--include-args")
+        .arg("--include-calldata")
+        .arg("--include-storage")
+        .env("TORGE_DISABLE_CACHE", "1")
+        .env("SOURCIFY_4BYTE_URL", format!("{sourcify_url}/"))
+        .env("SOURCIFY_SERVER_URL", format!("{sourcify_v2_url}/"));
+
+    let output = cmd.output().expect("failed to run");
+    assert!(
+        output.status.success(),
+        "should succeed despite prestate failure: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stdout.contains("Storage changes:"),
+        "storage diffs should not appear when prestate RPC fails"
+    );
+    assert!(
+        stderr.contains("storage diff unavailable"),
+        "stderr should contain degradation warning, got: {stderr}"
+    );
 }
 
 // ---------------------------------------------------------------------------

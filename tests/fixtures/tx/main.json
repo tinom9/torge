@@ -398,6 +398,36 @@
     },
     "expected_trace": "uniswapv4-execute.log",
     "expected_trace_logs": "uniswapv4-execute-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {
+          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+            "storage": {
+              "0x390f6178407c9b8e95f34597e92f120c7478b3b4adab2e0e6a14e8e3108fe7c3": "0x00000000000000000000000000000000000000000000004563918244f4000000"
+            }
+          },
+          "0xec70ff4a5b09110e4d20ada4f2db4a86ec61fac6": {
+            "storage": {
+              "0x8b9e16f0a36a0960db45bf6076e0770f865ab0cd4e2a4b3c34485b5830347692": "0x0000000000000000000000000000000000000000000001a784379d99db420000"
+            }
+          }
+        },
+        "post": {
+          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+            "storage": {
+              "0x390f6178407c9b8e95f34597e92f120c7478b3b4adab2e0e6a14e8e3108fe7c3": "0x00000000000000000000000000000000000000000000004566b000c82cab0ebd"
+            }
+          },
+          "0xec70ff4a5b09110e4d20ada4f2db4a86ec61fac6": {
+            "storage": {
+              "0x8b9e16f0a36a0960db45bf6076e0770f865ab0cd4e2a4b3c34485b5830347692": "0x0000000000000000000000000000000000000000000000e4d4a510762ca60000"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "uniswapv4-execute-full.log"
   },
   {
@@ -714,6 +744,36 @@
     },
     "expected_trace": "blur-buyToBorrowV2.log",
     "expected_trace_logs": "blur-buyToBorrowV2-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {
+          "0x01a656024de4b89e2d0198bf4d468e8fd2358b17": {
+            "storage": {
+              "0x48be7977e89539eaa4c72bf83bac54d23ef996e5ef722e9718ba391265084031": "0x00000000000000000000000000000000000000000000000382acb3dcb0a6176d"
+            }
+          },
+          "0xbd3531da5cf5857e7cfaa92426877b022e612cf8": {
+            "storage": {
+              "0xe53776c124528520fc08a6e338209ca29b53e53765fc176239d2cc872824d137": "0x000000000000000000000000988a3fe412f75382c005be3a37881a78129c8bbb"
+            }
+          }
+        },
+        "post": {
+          "0x01a656024de4b89e2d0198bf4d468e8fd2358b17": {
+            "storage": {
+              "0x48be7977e89539eaa4c72bf83bac54d23ef996e5ef722e9718ba391265084031": "0x0000000000000000000000000000000000000000000000035783c356ed2f176d"
+            }
+          },
+          "0xbd3531da5cf5857e7cfaa92426877b022e612cf8": {
+            "storage": {
+              "0xe53776c124528520fc08a6e338209ca29b53e53765fc176239d2cc872824d137": "0x00000000000000000000000029469395eaf6f95920e59f858042f0e28d98a20b"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "blur-buyToBorrowV2-full.log"
   },
   {
@@ -1798,6 +1858,26 @@
     },
     "expected_trace": "pimlico-handleOps.log",
     "expected_trace_logs": "pimlico-handleOps-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {
+          "0x0000000071727de22e5e9d8baf0edac6f37da032": {
+            "storage": {
+              "0xa1829a9003092132f585b6ccdd167c19fe9774dbdea4260287e8a8e8ca8185d7": "0x000000000000000000000000000000000000000000000000001ed5a8ae1a5000"
+            }
+          }
+        },
+        "post": {
+          "0x0000000071727de22e5e9d8baf0edac6f37da032": {
+            "storage": {
+              "0xa1829a9003092132f585b6ccdd167c19fe9774dbdea4260287e8a8e8ca8185d7": "0x000000000000000000000000000000000000000000000000001883c2d3dd4553"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "pimlico-handleOps-full.log"
   },
   {
@@ -2079,6 +2159,20 @@
     },
     "expected_trace": "usual-create.log",
     "expected_trace_logs": "usual-create-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {},
+        "post": {
+          "0xc4441c2be5d8fa8126822b9929ca0b81ea0de38e": {
+            "storage": {
+              "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc": "0x0000000000000000000000002b65f9d2e4b84a2df6ff0525741b75d1276a9c2f"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "usual-create-full.log"
   },
   {
@@ -2244,6 +2338,20 @@
     },
     "expected_trace": "plume-deploy.log",
     "expected_trace_logs": "plume-deploy-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {},
+        "post": {
+          "0x4c1746a800d224393fe2470c70a35717ed4ea5f1": {
+            "storage": {
+              "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc": "0x000000000000000000000000226e2dae9b561b314be6eec531590faa82daa3a8"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "plume-deploy-full.log"
   },
   {
@@ -2424,6 +2532,20 @@
     },
     "expected_trace": "movement-deploy.log",
     "expected_trace_logs": "movement-deploy-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {},
+        "post": {
+          "0x3fa729673f4b3cdf1b072b4c3f71860f3af38e2b": {
+            "storage": {
+              "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc": "0x0000000000000000000000001e1bf2adf28e2e0549ad2474f04f3e1b0de77e9c"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "movement-deploy-full.log"
   }
 ]

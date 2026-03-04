@@ -1,6 +1,11 @@
 use crate::utils::{
-    color::Palette, contract_resolver::ContractResolver, event_formatter::Log, hex_utils, rpc_url,
-    selector_resolver::SelectorResolver, trace_renderer,
+    color::Palette,
+    contract_resolver::ContractResolver,
+    event_formatter::Log,
+    hex_utils, rpc_url,
+    selector_resolver::SelectorResolver,
+    storage_diff::{self, PrestateDiff},
+    trace_renderer,
 };
 use clap::Parser;
 use reqwest::blocking::Client;
@@ -51,6 +56,12 @@ pub struct TraceOpts {
     /// With `--resolve-selectors`, resolves event names and decodes parameters.
     #[arg(long)]
     pub include_logs: bool,
+
+    /// Include storage changes (state diffs) after the trace.
+    ///
+    /// Requires an additional RPC call using `prestateTracer` in diff mode.
+    #[arg(long)]
+    pub include_storage: bool,
 
     /// Disable system proxy for RPC requests.
     #[arg(long)]
@@ -172,14 +183,39 @@ pub fn validate_hex(data: &str, field: &str) -> Result<(), TraceError> {
     Ok(())
 }
 
+/// Build a JSON-RPC request envelope.
+pub fn rpc_payload(id: u32, method: &str, params: serde_json::Value) -> serde_json::Value {
+    let mut v = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+    });
+    v["params"] = params;
+    v
+}
+
+pub fn call_tracer_config(include_logs: bool) -> serde_json::Value {
+    serde_json::json!({
+        "tracer": "callTracer",
+        "tracerConfig": {
+            "onlyTopCall": false,
+            "withLog": include_logs,
+        }
+    })
+}
+
+pub fn prestate_tracer_config() -> serde_json::Value {
+    serde_json::json!({
+        "tracer": "prestateTracer",
+        "tracerConfig": {
+            "diffMode": true
+        }
+    })
+}
+
 /// Fetch the chain ID from the RPC node as a decimal string (e.g. `"1"`).
 fn fetch_chain_id(client: &Client, rpc_url: &str) -> Result<String, TraceError> {
-    let payload = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "eth_chainId",
-        "params": []
-    });
+    let payload = rpc_payload(1, "eth_chainId", serde_json::json!([]));
 
     let resp = client.post(rpc_url).json(&payload).send()?;
     let body: RpcResponse<String> = resp
@@ -208,7 +244,14 @@ fn parse_chain_id_hex(hex_str: &str) -> Result<String, TraceError> {
 }
 
 /// Send an RPC payload, parse the trace response, and print it.
-pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result<(), TraceError> {
+///
+/// When `prestate_payload` is provided, a second RPC call is made using
+/// `prestateTracer` in diff mode to display storage changes after the trace.
+pub fn execute_and_print(
+    payload: &serde_json::Value,
+    prestate_payload: Option<&serde_json::Value>,
+    opts: TraceOpts,
+) -> Result<(), TraceError> {
     if opts.include_args && !opts.resolve_selectors {
         return Err(TraceError::IncludeArgsRequiresResolveSelectors);
     }
@@ -229,8 +272,25 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
     };
 
     let resp = client.post(&rpc_url).json(payload).send()?;
+    let call_trace: CallTrace = parse_rpc_response(resp)?;
 
-    let call_trace = parse_rpc_response(resp)?;
+    let prestate_diff: Option<PrestateDiff> = if let Some(ps) = prestate_payload {
+        let result = client
+            .post(&rpc_url)
+            .json(ps)
+            .send()
+            .map_err(TraceError::from)
+            .and_then(parse_rpc_response);
+        match result {
+            Ok(diff) => Some(diff),
+            Err(e) => {
+                eprintln!("warning: storage diff unavailable: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let palette = if opts.no_color {
         Palette::new(false)
@@ -249,6 +309,10 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
         opts.include_logs,
         palette,
     );
+
+    if let Some(diff) = &prestate_diff {
+        storage_diff::print_storage_diff(diff, &mut contract_resolver, palette);
+    }
 
     let warnings: Vec<String> = [
         selector_resolver.take_warning(),
@@ -269,7 +333,9 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
 }
 
 /// Parse the RPC response, returning the result or an error.
-fn parse_rpc_response(resp: reqwest::blocking::Response) -> Result<CallTrace, TraceError> {
+fn parse_rpc_response<T: serde::de::DeserializeOwned>(
+    resp: reqwest::blocking::Response,
+) -> Result<T, TraceError> {
     let status = resp.status();
     let body = resp.text()?;
 
@@ -280,7 +346,7 @@ fn parse_rpc_response(resp: reqwest::blocking::Response) -> Result<CallTrace, Tr
         )));
     }
 
-    let rpc_resp: RpcResponse<CallTrace> = serde_json::from_str(&body)
+    let rpc_resp: RpcResponse<T> = serde_json::from_str(&body)
         .map_err(|e| TraceError::Decode(format!("invalid JSON: {e}")))?;
 
     if let Some(err) = rpc_resp.error {

@@ -20,21 +20,21 @@ pub fn run(args: TxArgs) -> Result<(), TraceError> {
         )));
     }
 
-    let payload = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "debug_traceTransaction",
-        "params": [
-            args.tx_hash,
-            {
-                "tracer": "callTracer",
-                "tracerConfig": {
-                    "onlyTopCall": false,
-                    "withLog": args.opts.include_logs,
-                }
-            }
-        ]
+    let TxArgs { tx_hash, opts } = args;
+
+    let payload = trace::rpc_payload(
+        1,
+        "debug_traceTransaction",
+        json!([&tx_hash, trace::call_tracer_config(opts.include_logs)]),
+    );
+
+    let prestate_payload = opts.include_storage.then(|| {
+        trace::rpc_payload(
+            2,
+            "debug_traceTransaction",
+            json!([&tx_hash, trace::prestate_tracer_config()]),
+        )
     });
 
-    trace::execute_and_print(&payload, args.opts)
+    trace::execute_and_print(&payload, prestate_payload.as_ref(), opts)
 }

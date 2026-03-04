@@ -242,6 +242,28 @@
     },
     "expected_trace": "usdt-transfer.log",
     "expected_trace_logs": "usdt-transfer-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {
+          "0xdac17f958d2ee523a2206206994597c13d831ec7": {
+            "storage": {
+              "0x0e11a23e5ee6a63bb5bc0332a5d301e3fce50f853a73c10cf32c3e9bae1e8488": "0x00000000000000000000000000000000000000000000000000000002540be400",
+              "0xd1fafa7e5cc19f8ff1ed979e86ed52b7ff6be7ca4ee50ed03154ad7c3c364a3e": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        },
+        "post": {
+          "0xdac17f958d2ee523a2206206994597c13d831ec7": {
+            "storage": {
+              "0x0e11a23e5ee6a63bb5bc0332a5d301e3fce50f853a73c10cf32c3e9bae1e8488": "0x00000000000000000000000000000000000000000000000000000001f28e88c0",
+              "0xd1fafa7e5cc19f8ff1ed979e86ed52b7ff6be7ca4ee50ed03154ad7c3c364a3e": "0x000000000000000000000000000000000000000000000000000000003b9aca00"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "usdt-transfer-full.log"
   },
   {
@@ -277,6 +299,26 @@
     },
     "expected_trace": "weth-deposit.log",
     "expected_trace_logs": "weth-deposit-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {
+          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+            "storage": {
+              "0x6a91e089e32674930cf24d77f3f25bfc71de3113940acb4e14d51a68d3ca2451": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        },
+        "post": {
+          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+            "storage": {
+              "0x6a91e089e32674930cf24d77f3f25bfc71de3113940acb4e14d51a68d3ca2451": "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "weth-deposit-full.log"
   },
   {
@@ -343,6 +385,26 @@
     },
     "expected_trace": "balancer-basepool.log",
     "expected_trace_logs": "balancer-basepool-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {
+          "0xba12222222228d8ba445958a75a0704d566bf2c8": {
+            "storage": {
+              "0x06fbb4b6b6e429be0e0c28b08a10a8ed2f3ec5e2a6a08e8d25be38e894c8d4d": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        },
+        "post": {
+          "0xba12222222228d8ba445958a75a0704d566bf2c8": {
+            "storage": {
+              "0x06fbb4b6b6e429be0e0c28b08a10a8ed2f3ec5e2a6a08e8d25be38e894c8d4d": "0x0000000000000000000000000000000000000000000000000000000000000001"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "balancer-basepool-full.log"
   },
   {
@@ -488,6 +550,20 @@
     },
     "expected_trace": "agglayer-vault.log",
     "expected_trace_logs": "agglayer-vault-logs.log",
+    "prestate_response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "pre": {},
+        "post": {
+          "0xbd770416a3345f91e4b34576cb804a576fa48eb1": {
+            "storage": {
+              "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc": "0x000000000000000000000000cc865b0324121b43728176024f58bdbb3afd6f29"
+            }
+          }
+        }
+      }
+    },
     "expected_trace_full": "agglayer-vault-full.log"
   }
 ]
