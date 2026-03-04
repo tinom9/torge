@@ -7,4 +7,5 @@ pub mod hex_utils;
 pub mod precompiles;
 pub mod rpc_url;
 pub mod selector_resolver;
+pub mod trace_renderer;
 pub mod value_parser;
