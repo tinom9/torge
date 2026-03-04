@@ -165,6 +165,97 @@ fn parse_block_id(block: &str) -> Result<String, TraceError> {
 mod tests {
     use super::*;
 
+    fn make_call_args(args: Vec<&str>, create: bool) -> CallArgs {
+        CallArgs {
+            args: args.into_iter().map(String::from).collect(),
+            create,
+            from: None,
+            gas_limit: None,
+            value: None,
+            block: "latest".to_string(),
+            opts: TraceOpts {
+                rpc_url: None,
+                resolve_selectors: false,
+                resolve_contracts: false,
+                include_args: false,
+                include_calldata: false,
+                include_logs: false,
+                no_proxy: false,
+                no_color: false,
+            },
+        }
+    }
+
+    #[test]
+    fn test_parse_positional_args_create_one_arg() {
+        let args = make_call_args(vec!["0xdead"], true);
+        let parsed = parse_positional_args(&args).unwrap();
+        assert!(parsed.to.is_none());
+        assert_eq!(parsed.data, "0xdead");
+    }
+
+    #[test]
+    fn test_parse_positional_args_create_two_args() {
+        let args = make_call_args(vec!["0xaddr", "0xdata"], true);
+        let Err(err) = parse_positional_args(&args) else {
+            panic!("expected Err");
+        };
+        assert!(err.to_string().contains("--create cannot be used"));
+    }
+
+    #[test]
+    fn test_parse_positional_args_create_no_args() {
+        let args = make_call_args(vec![], true);
+        let Err(err) = parse_positional_args(&args) else {
+            panic!("expected Err");
+        };
+        assert!(err.to_string().contains("expected exactly 1 argument"));
+    }
+
+    #[test]
+    fn test_parse_positional_args_create_three_args() {
+        let args = make_call_args(vec!["a", "b", "c"], true);
+        let Err(err) = parse_positional_args(&args) else {
+            panic!("expected Err");
+        };
+        assert!(err.to_string().contains("expected exactly 1 argument"));
+    }
+
+    #[test]
+    fn test_parse_positional_args_normal_two_args() {
+        let args = make_call_args(vec!["0xaddr", "0xdata"], false);
+        let parsed = parse_positional_args(&args).unwrap();
+        assert_eq!(parsed.to, Some("0xaddr".to_string()));
+        assert_eq!(parsed.data, "0xdata");
+    }
+
+    #[test]
+    fn test_parse_positional_args_normal_one_arg() {
+        let args = make_call_args(vec!["0xdata"], false);
+        let Err(err) = parse_positional_args(&args) else {
+            panic!("expected Err");
+        };
+        assert!(err.to_string().contains("missing DATA argument"));
+    }
+
+    #[test]
+    fn test_parse_positional_args_normal_no_args() {
+        let args = make_call_args(vec![], false);
+        let Err(err) = parse_positional_args(&args) else {
+            panic!("expected Err");
+        };
+        assert!(err.to_string().contains("expected 2 arguments"));
+    }
+
+    #[test]
+    fn test_parse_positional_args_normal_three_args() {
+        let args = make_call_args(vec!["a", "b", "c"], false);
+        let Err(err) = parse_positional_args(&args) else {
+            panic!("expected Err");
+        };
+        assert!(err.to_string().contains("expected 2 arguments"));
+    }
+
     #[test]
     fn test_parse_block_id_tags() {
         assert_eq!(parse_block_id("latest").unwrap(), "latest");

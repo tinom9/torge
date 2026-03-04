@@ -153,3 +153,157 @@ fn select_best_entry(entries: &[serde_json::Value], calldata: Option<&str>) -> O
         entries.first().and_then(name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const DECODABLE_SIG: &str = "transfer(address,uint256)";
+    const DECODABLE_SIG_ALT: &str = "approve(address,uint256)";
+    const NON_DECODABLE_SIG: &str = "foo(address,address,address)";
+    const CALLDATA: &str = "0xa9059cbb000000000000000000000000deadbeefdeadbeefdeadbeefdeadbeefdeadbeef00000000000000000000000000000000000000000000000000000000000003e8";
+
+    fn entry(name: &str, verified: bool, filtered: bool) -> serde_json::Value {
+        json!({"name": name, "hasVerifiedContract": verified, "filtered": filtered})
+    }
+
+    #[test]
+    fn test_select_best_entry_single_tiers() {
+        let calldata = Some(CALLDATA);
+
+        let entries = vec![entry(DECODABLE_SIG, true, false)];
+        assert_eq!(
+            select_best_entry(&entries, calldata),
+            Some(DECODABLE_SIG.to_string())
+        );
+
+        let entries = vec![entry(DECODABLE_SIG, true, true)];
+        assert_eq!(
+            select_best_entry(&entries, calldata),
+            Some(DECODABLE_SIG.to_string())
+        );
+
+        let entries = vec![entry(DECODABLE_SIG, false, false)];
+        assert_eq!(
+            select_best_entry(&entries, calldata),
+            Some(DECODABLE_SIG.to_string())
+        );
+
+        let entries = vec![entry(DECODABLE_SIG, false, true)];
+        assert_eq!(
+            select_best_entry(&entries, calldata),
+            Some(DECODABLE_SIG.to_string())
+        );
+    }
+
+    #[test]
+    fn test_select_best_entry_non_decodable_fallback() {
+        let entries = vec![entry(NON_DECODABLE_SIG, true, false)];
+        assert_eq!(
+            select_best_entry(&entries, Some(CALLDATA)),
+            Some(NON_DECODABLE_SIG.to_string()),
+        );
+    }
+
+    #[test]
+    fn test_select_best_entry_missing_name() {
+        let entries = vec![json!({"hasVerifiedContract": true, "filtered": false})];
+        assert_eq!(select_best_entry(&entries, Some(CALLDATA)), None);
+    }
+
+    #[test]
+    fn test_select_best_entry_priority_order() {
+        let calldata = Some(CALLDATA);
+
+        let entries = vec![
+            entry(DECODABLE_SIG_ALT, true, true),
+            entry(DECODABLE_SIG, true, false),
+        ];
+        assert_eq!(
+            select_best_entry(&entries, calldata),
+            Some(DECODABLE_SIG.to_string())
+        );
+
+        let entries = vec![
+            entry(DECODABLE_SIG_ALT, false, false),
+            entry(DECODABLE_SIG, true, true),
+        ];
+        assert_eq!(
+            select_best_entry(&entries, calldata),
+            Some(DECODABLE_SIG.to_string())
+        );
+
+        let entries = vec![
+            entry(DECODABLE_SIG_ALT, false, true),
+            entry(DECODABLE_SIG, false, false),
+        ];
+        assert_eq!(
+            select_best_entry(&entries, calldata),
+            Some(DECODABLE_SIG.to_string())
+        );
+    }
+
+    #[test]
+    fn test_select_best_entry_decodable_beats_non_decodable() {
+        let entries = vec![
+            entry(NON_DECODABLE_SIG, true, false),
+            entry(DECODABLE_SIG, false, true),
+        ];
+        assert_eq!(
+            select_best_entry(&entries, Some(CALLDATA)),
+            Some(DECODABLE_SIG.to_string()),
+        );
+    }
+
+    #[test]
+    fn test_select_best_entry_all_non_decodable() {
+        let entries = vec![
+            entry(NON_DECODABLE_SIG, true, false),
+            entry("bar(address,address,address)", false, true),
+        ];
+        assert_eq!(
+            select_best_entry(&entries, Some(CALLDATA)),
+            Some(NON_DECODABLE_SIG.to_string()),
+        );
+    }
+
+    #[test]
+    fn test_select_best_entry_empty() {
+        let entries: Vec<serde_json::Value> = vec![];
+        assert_eq!(select_best_entry(&entries, Some(CALLDATA)), None);
+    }
+
+    #[test]
+    fn test_select_best_entry_event_single() {
+        let entries = vec![entry("Transfer(address,address,uint256)", true, false)];
+        assert_eq!(
+            select_best_entry(&entries, None),
+            Some("Transfer(address,address,uint256)".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_select_best_entry_event_no_name() {
+        let entries = vec![json!({"hasVerifiedContract": true, "filtered": false})];
+        assert_eq!(select_best_entry(&entries, None), None);
+    }
+
+    #[test]
+    fn test_select_best_entry_event_multiple() {
+        let entries = vec![
+            entry("Transfer(address,address,uint256)", true, false),
+            entry("Approval(address,address,uint256)", true, false),
+        ];
+        assert_eq!(
+            select_best_entry(&entries, None),
+            Some("Transfer(address,address,uint256)".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_select_best_entry_event_empty() {
+        let entries: Vec<serde_json::Value> = vec![];
+        assert_eq!(select_best_entry(&entries, None), None);
+    }
+}
