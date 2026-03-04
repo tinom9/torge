@@ -1,6 +1,7 @@
 use crate::utils::disk_cache::{CacheError, DiskCache};
 use clap::Parser;
 use std::fs;
+use std::path::Path;
 use thiserror::Error;
 
 const CACHE_KINDS: &[&str] = &["selectors", "contracts"];
@@ -48,7 +49,7 @@ pub fn run(args: CleanArgs) -> Result<(), CleanError> {
     }
 
     if !found_any {
-        match DiskCache::cache_path(CACHE_KINDS[0]).and_then(|p| p.parent().map(|d| d.to_owned())) {
+        match DiskCache::cache_path(CACHE_KINDS[0]).and_then(|p| p.parent().map(Path::to_owned)) {
             Some(dir) => println!("no cache files found in {}", dir.display()),
             None => println!("no cache files found (could not determine cache directory)"),
         }

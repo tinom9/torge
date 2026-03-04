@@ -1,5 +1,5 @@
 use super::trace::{self, TraceError, TraceOpts};
-use crate::utils::value_parser;
+use crate::utils::{hex_utils, value_parser};
 use clap::Parser;
 use serde_json::json;
 
@@ -143,8 +143,8 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
 fn parse_block_id(block: &str) -> Result<String, TraceError> {
     match block {
         "latest" | "earliest" | "pending" | "safe" | "finalized" => Ok(block.to_string()),
-        s if s.starts_with("0x") || s.starts_with("0X") => {
-            let hex = &s[2..];
+        s if hex_utils::require_0x(s).is_some() => {
+            let hex = hex_utils::require_0x(s).unwrap();
             if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Err(TraceError::InvalidInput(format!(
                     "--block: invalid hex block number '{s}'"

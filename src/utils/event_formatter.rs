@@ -72,7 +72,7 @@ fn format_event_raw(topic0: &str, log: &Log) -> String {
     }
 
     if let Some(data) = &log.data {
-        let stripped = data.strip_prefix("0x").unwrap_or(data);
+        let stripped = hex_utils::strip_0x(data);
         if !stripped.is_empty() {
             parts.push(format!("data: {data}"));
         }
@@ -107,7 +107,7 @@ fn decode_event_params(signature: &str, log: &Log) -> Vec<String> {
 }
 
 fn decode_event_data(signature: &str, data: &str, indexed_count: usize) -> Option<Vec<String>> {
-    let stripped = data.strip_prefix("0x").unwrap_or(data);
+    let stripped = hex_utils::strip_0x(data);
     if stripped.is_empty() {
         return Some(Vec::new());
     }
@@ -183,7 +183,7 @@ fn format_decoded_values(value: &alloy_dyn_abi::DynSolValue) -> Vec<String> {
 /// Tries to parse as number (must fit in u128 as a heuristic to distinguish
 /// numbers from hashes), then detects addresses; otherwise shows full hex.
 fn format_topic_value(topic: &str) -> String {
-    let stripped = topic.strip_prefix("0x").unwrap_or(topic);
+    let stripped = hex_utils::strip_0x(topic);
 
     // Heuristic: if the value fits in u128, it's likely a number.
     // Full 32-byte values (hashes, large IDs) won't fit.

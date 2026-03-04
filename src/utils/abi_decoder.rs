@@ -1,3 +1,4 @@
+use super::hex_utils;
 use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt};
 use alloy_json_abi::Function;
 
@@ -31,7 +32,7 @@ pub fn can_decode(signature: &str, calldata: &str) -> bool {
 /// Recognises `Error(string)` (0x08c379a0) and `Panic(uint256)` (0x4e487b71).
 /// Returns `None` for unknown selectors — use [`decode_custom_revert`] as fallback.
 pub fn decode_revert_reason(output: &str) -> Option<String> {
-    let hex = output.strip_prefix("0x").unwrap_or(output);
+    let hex = hex_utils::strip_0x(output);
     if hex.len() < 8 {
         return None;
     }
@@ -66,7 +67,7 @@ pub fn decode_custom_revert(
     output: &str,
     resolver: &mut super::selector_resolver::SelectorResolver,
 ) -> Option<String> {
-    let hex = output.strip_prefix("0x").unwrap_or(output);
+    let hex = hex_utils::strip_0x(output);
     if hex.len() < 8 {
         return None;
     }
@@ -110,7 +111,7 @@ pub fn format_value(value: &DynSolValue) -> String {
 }
 
 fn decode_hex(input: &str) -> Option<Vec<u8>> {
-    hex::decode(input.strip_prefix("0x").unwrap_or(input)).ok()
+    hex::decode(hex_utils::strip_0x(input)).ok()
 }
 
 fn decode_with_function(signature: &str, data: &[u8]) -> Option<Vec<(DynSolType, DynSolValue)>> {
