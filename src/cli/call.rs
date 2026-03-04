@@ -116,24 +116,25 @@ pub fn run(args: CallArgs) -> Result<(), TraceError> {
         tx_object["value"] = json!(hex_value);
     }
 
-    let payload = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "debug_traceCall",
-        "params": [
-            tx_object,
-            block_id,
-            {
-                "tracer": "callTracer",
-                "tracerConfig": {
-                    "onlyTopCall": false,
-                    "withLog": args.opts.include_logs,
-                }
-            }
-        ]
+    let payload = trace::rpc_payload(
+        1,
+        "debug_traceCall",
+        json!([
+            &tx_object,
+            &block_id,
+            trace::call_tracer_config(args.opts.include_logs)
+        ]),
+    );
+
+    let prestate_payload = args.opts.include_storage.then(|| {
+        trace::rpc_payload(
+            2,
+            "debug_traceCall",
+            json!([&tx_object, &block_id, trace::prestate_tracer_config()]),
+        )
     });
 
-    trace::execute_and_print(&payload, args.opts)
+    trace::execute_and_print(&payload, prestate_payload.as_ref(), args.opts)
 }
 
 /// Parse a block identifier from user input into a JSON-RPC block parameter.
@@ -180,6 +181,7 @@ mod tests {
                 include_args: false,
                 include_calldata: false,
                 include_logs: false,
+                include_storage: false,
                 no_proxy: false,
                 no_color: false,
             },
