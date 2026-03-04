@@ -1,5 +1,5 @@
 use crate::utils::{
-    color::Palette, contract_resolver::ContractResolver, event_formatter::Log, rpc_url,
+    color::Palette, contract_resolver::ContractResolver, event_formatter::Log, hex_utils, rpc_url,
     selector_resolver::SelectorResolver, trace_renderer,
 };
 use clap::Parser;
