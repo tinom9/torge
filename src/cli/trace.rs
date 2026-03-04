@@ -144,8 +144,7 @@ fn resolve_rpc_url(url_or_alias: Option<String>) -> Result<String, TraceError> {
 
 /// Validate that a string is a 0x-prefixed Ethereum address (40 hex chars).
 pub fn validate_address(addr: &str, field: &str) -> Result<(), TraceError> {
-    let hex = addr
-        .strip_prefix("0x")
+    let hex = hex_utils::require_0x(addr)
         .ok_or_else(|| TraceError::InvalidInput(format!("{field}: missing 0x prefix")))?;
     if hex.len() != 40 {
         return Err(TraceError::InvalidInput(format!(
@@ -163,8 +162,7 @@ pub fn validate_address(addr: &str, field: &str) -> Result<(), TraceError> {
 
 /// Validate that a string is 0x-prefixed hex data with an even number of hex chars.
 pub fn validate_hex(data: &str, field: &str) -> Result<(), TraceError> {
-    let hex = data
-        .strip_prefix("0x")
+    let hex = hex_utils::require_0x(data)
         .ok_or_else(|| TraceError::InvalidInput(format!("{field}: missing 0x prefix")))?;
     if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(TraceError::InvalidInput(format!(
@@ -206,9 +204,7 @@ fn fetch_chain_id(client: &Client, rpc_url: &str) -> Result<String, TraceError> 
 
 /// Parse a hex chain ID (e.g. `"0x1"`, `"0xa"`) into a decimal string.
 fn parse_chain_id_hex(hex_str: &str) -> Result<String, TraceError> {
-    let stripped = hex_str
-        .strip_prefix("0x")
-        .or_else(|| hex_str.strip_prefix("0X"))
+    let stripped = hex_utils::require_0x(hex_str)
         .ok_or_else(|| TraceError::Decode(format!("eth_chainId: invalid hex '{hex_str}'")))?;
 
     u64::from_str_radix(stripped, 16)
@@ -477,7 +473,7 @@ fn print_call(
         }
     } else if decode_attempted {
         if let Some(input) = &node.input {
-            let s = input.strip_prefix("0x").unwrap_or(input);
+            let s = hex_utils::strip_0x(input);
             if s.len() > 8 {
                 println!(
                     "{meta_prefix}{}",
@@ -547,7 +543,7 @@ fn format_call_desc(
 }
 
 fn extract_selector(input: &str) -> Option<String> {
-    let s = input.strip_prefix("0x").unwrap_or(input);
+    let s = hex_utils::strip_0x(input);
     s.get(..8).map(|sel| format!("0x{sel}"))
 }
 
@@ -625,6 +621,16 @@ mod tests {
         assert!(validate_hex("0xGGGG", "data").is_err());
         assert!(validate_hex("0xabc", "data").is_err()); // odd length
         assert!(validate_hex("0xab", "data").is_ok());
+    }
+
+    #[test]
+    fn test_validate_address_uppercase_prefix() {
+        assert!(validate_address("0XdAC17F958D2ee523a2206206994597C13D831ec7", "to").is_ok());
+    }
+
+    #[test]
+    fn test_validate_hex_uppercase_prefix() {
+        assert!(validate_hex("0Xa9059cbb", "data").is_ok());
     }
 
     #[test]

@@ -3,7 +3,7 @@
 /// Precompiled contracts are at addresses 0x01-0x0a (and potentially higher in newer forks).
 /// Returns `Some((name, signature))` if the address is a known precompile, `None` otherwise.
 pub fn get_precompile_info(address: &str) -> Option<(&'static str, &'static str)> {
-    let addr = address.strip_prefix("0x").unwrap_or(address);
+    let addr = super::hex_utils::strip_0x(address);
 
     // Full 40-char addresses: precompiles have 38+ leading zeros.
     // Short-circuit: if the non-zero portion is beyond 0x0a, it's not a precompile.

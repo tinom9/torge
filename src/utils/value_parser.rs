@@ -1,3 +1,4 @@
+use super::hex_utils;
 use alloy_primitives::U256;
 
 /// Parse a value string into a `0x`-prefixed hex wei amount.
@@ -9,7 +10,7 @@ use alloy_primitives::U256;
 pub fn parse_value(s: &str) -> Result<String, String> {
     let s = s.trim();
 
-    if let Some(hex) = s.strip_prefix("0x") {
+    if let Some(hex) = hex_utils::require_0x(s) {
         let v = U256::from_str_radix(hex, 16).map_err(|_| format!("invalid hex value: {s}"))?;
         return Ok(format!("0x{v:x}"));
     }
@@ -93,6 +94,14 @@ mod tests {
     fn test_wei() {
         assert_eq!(parse_value("1wei").unwrap(), "0x1");
         assert_eq!(parse_value("1000000000wei").unwrap(), "0x3b9aca00");
+    }
+
+    #[test]
+    fn test_hex_uppercase_prefix() {
+        assert_eq!(
+            parse_value("0Xde0b6b3a7640000").unwrap(),
+            "0xde0b6b3a7640000"
+        );
     }
 
     #[test]
