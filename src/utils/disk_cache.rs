@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -35,6 +35,7 @@ pub enum CacheError {
 /// used for serialization, keeping backward compatibility with existing cache files.
 pub struct DiskCache {
     entries: HashMap<String, String>,
+    transient_misses: HashSet<String>,
     kind: String,
     dirty: bool,
     disabled: bool,
@@ -57,6 +58,7 @@ impl DiskCache {
         let disabled = std::env::var("TORGE_DISABLE_CACHE").is_ok();
         let empty = Self {
             entries: HashMap::new(),
+            transient_misses: HashSet::new(),
             kind: kind.to_owned(),
             dirty: false,
             disabled,
@@ -74,6 +76,7 @@ impl DiskCache {
 
         Self {
             entries,
+            transient_misses: HashSet::new(),
             kind: kind.to_owned(),
             dirty: false,
             disabled: false,
@@ -124,6 +127,9 @@ impl DiskCache {
 
     /// Look up a key, distinguishing between a resolved hit, a cached miss, and not-in-cache.
     pub fn lookup(&self, key: &str) -> CacheLookup<'_> {
+        if self.transient_misses.contains(key) {
+            return CacheLookup::Miss;
+        }
         match self.entries.get(key) {
             Some(v) if v == CACHE_MISS_MARKER => CacheLookup::Miss,
             Some(v) => CacheLookup::Hit(v),
@@ -138,6 +144,11 @@ impl DiskCache {
 
     pub fn insert_miss(&mut self, key: String) {
         self.insert(key, CACHE_MISS_MARKER.to_owned());
+    }
+
+    /// Record a miss that should not be persisted to disk (e.g. transient network errors).
+    pub fn insert_transient_miss(&mut self, key: String) {
+        self.transient_misses.insert(key);
     }
 
     /// Remove all unknown (unresolved) entries from the persisted cache.
@@ -179,6 +190,7 @@ mod tests {
     fn empty_cache() -> DiskCache {
         DiskCache {
             entries: HashMap::new(),
+            transient_misses: HashSet::new(),
             kind: "test".to_owned(),
             dirty: false,
             disabled: true,
@@ -205,5 +217,13 @@ mod tests {
         let mut cache = empty_cache();
         cache.insert_miss("0xdeadbeef".to_owned());
         assert!(matches!(cache.lookup("0xdeadbeef"), CacheLookup::Miss));
+    }
+
+    #[test]
+    fn test_transient_miss() {
+        let mut cache = empty_cache();
+        cache.insert_transient_miss("0xdeadbeef".to_owned());
+        assert!(matches!(cache.lookup("0xdeadbeef"), CacheLookup::Miss));
+        assert!(!cache.entries.contains_key("0xdeadbeef"));
     }
 }
