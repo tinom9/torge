@@ -5,7 +5,7 @@ use super::{
 use reqwest::blocking::Client;
 
 /// Default Sourcify API base URL for 4byte mirror.
-const DEFAULT_SOURCIFY_URL: &str = "https://api.4byte.sourcify.dev/";
+const DEFAULT_SOURCIFY_4BYTE_URL: &str = "https://api.4byte.sourcify.dev/";
 
 /// Best-effort function selector resolver using Sourcify's 4byte mirror with disk caching.
 pub struct SelectorResolver {
@@ -18,8 +18,8 @@ pub struct SelectorResolver {
 
 impl SelectorResolver {
     pub fn new(client: Client, enabled: bool) -> Self {
-        let mut base_url =
-            std::env::var("SOURCIFY_URL").unwrap_or_else(|_| DEFAULT_SOURCIFY_URL.to_owned());
+        let mut base_url = std::env::var("SOURCIFY_4BYTE_URL")
+            .unwrap_or_else(|_| DEFAULT_SOURCIFY_4BYTE_URL.to_owned());
         if !base_url.ends_with('/') {
             base_url.push('/');
         }
