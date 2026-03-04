@@ -1,6 +1,6 @@
 [package]
 name = "torge"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.87"
 description = "CLI tool to produce Foundry-style traces for EVM transactions through debug_traceTransaction RPC requests"
