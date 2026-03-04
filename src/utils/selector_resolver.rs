@@ -13,7 +13,7 @@ pub struct SelectorResolver {
     disk_cache: DiskCache,
     base_url: String,
     enabled: bool,
-    warned: bool,
+    warning: Option<String>,
 }
 
 impl SelectorResolver {
@@ -28,13 +28,17 @@ impl SelectorResolver {
             disk_cache: DiskCache::load("selectors"),
             base_url,
             enabled,
-            warned: false,
+            warning: None,
         }
     }
 
     #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    pub fn take_warning(&mut self) -> Option<String> {
+        self.warning.take()
     }
 
     /// Resolve a 4-byte function selector to a text signature.
@@ -73,9 +77,10 @@ impl SelectorResolver {
         let resp = match self.client.get(&url).send() {
             Ok(r) if r.status().is_success() => r,
             Ok(_) | Err(_) => {
-                if !self.warned {
-                    eprintln!("warning: sourcify selector lookup failed for {key}, results may be incomplete");
-                    self.warned = true;
+                if self.warning.is_none() {
+                    self.warning = Some(format!(
+                        "sourcify selector lookup failed for {key}, results may be incomplete"
+                    ));
                 }
                 self.disk_cache.insert_transient_miss(key.to_owned());
                 return None;

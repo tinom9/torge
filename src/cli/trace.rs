@@ -255,6 +255,21 @@ pub fn execute_and_print(payload: &serde_json::Value, opts: TraceOpts) -> Result
         palette,
     );
 
+    let warnings: Vec<String> = [
+        selector_resolver.take_warning(),
+        contract_resolver.take_warning(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    if !warnings.is_empty() {
+        eprintln!();
+        for w in warnings {
+            eprintln!("{}", palette.yellow(&format!("warning: {w}")));
+        }
+    }
+
     Ok(())
 }
 

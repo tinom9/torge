@@ -10,7 +10,7 @@ pub struct ContractResolver {
     base_url: String,
     chain_id: Option<String>,
     enabled: bool,
-    warned: bool,
+    warning: Option<String>,
 }
 
 impl ContractResolver {
@@ -26,8 +26,12 @@ impl ContractResolver {
             base_url,
             chain_id,
             enabled,
-            warned: false,
+            warning: None,
         }
+    }
+
+    pub fn take_warning(&mut self) -> Option<String> {
+        self.warning.take()
     }
 
     /// Resolve a contract address to its name via Sourcify's v2 contract lookup.
@@ -61,11 +65,10 @@ impl ContractResolver {
                 return None;
             }
             Ok(_) | Err(_) => {
-                if !self.warned {
-                    eprintln!(
-                        "warning: sourcify contract lookup failed for {address}, results may be incomplete"
-                    );
-                    self.warned = true;
+                if self.warning.is_none() {
+                    self.warning = Some(format!(
+                        "sourcify contract lookup failed for {address}, results may be incomplete"
+                    ));
                 }
                 self.disk_cache.insert_transient_miss(cache_key);
                 return None;
