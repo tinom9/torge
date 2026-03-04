@@ -13,6 +13,7 @@ pub struct SelectorResolver {
     disk_cache: DiskCache,
     base_url: String,
     enabled: bool,
+    warned: bool,
 }
 
 impl SelectorResolver {
@@ -27,6 +28,7 @@ impl SelectorResolver {
             disk_cache: DiskCache::load("selectors"),
             base_url,
             enabled,
+            warned: false,
         }
     }
 
@@ -68,19 +70,20 @@ impl SelectorResolver {
             self.base_url
         );
 
-        let Some(resp) = self
-            .client
-            .get(&url)
-            .send()
-            .ok()
-            .and_then(|r| r.error_for_status().ok())
-        else {
-            self.disk_cache.insert_miss(key.to_owned());
-            return None;
+        let resp = match self.client.get(&url).send() {
+            Ok(r) if r.status().is_success() => r,
+            Ok(_) | Err(_) => {
+                if !self.warned {
+                    eprintln!("warning: sourcify selector lookup failed for {key}, results may be incomplete");
+                    self.warned = true;
+                }
+                self.disk_cache.insert_transient_miss(key.to_owned());
+                return None;
+            }
         };
 
         let Some(body) = resp.json::<serde_json::Value>().ok() else {
-            self.disk_cache.insert_miss(key.to_owned());
+            self.disk_cache.insert_transient_miss(key.to_owned());
             return None;
         };
 

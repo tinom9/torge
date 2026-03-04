@@ -10,6 +10,7 @@ pub struct ContractResolver {
     base_url: String,
     chain_id: Option<String>,
     enabled: bool,
+    warned: bool,
 }
 
 impl ContractResolver {
@@ -25,6 +26,7 @@ impl ContractResolver {
             base_url,
             chain_id,
             enabled,
+            warned: false,
         }
     }
 
@@ -52,19 +54,26 @@ impl ContractResolver {
             self.base_url
         );
 
-        let Some(resp) = self
-            .client
-            .get(&url)
-            .send()
-            .ok()
-            .and_then(|r| r.error_for_status().ok())
-        else {
-            self.disk_cache.insert_miss(cache_key);
-            return None;
+        let resp = match self.client.get(&url).send() {
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) if r.status() == reqwest::StatusCode::NOT_FOUND => {
+                self.disk_cache.insert_miss(cache_key);
+                return None;
+            }
+            Ok(_) | Err(_) => {
+                if !self.warned {
+                    eprintln!(
+                        "warning: sourcify contract lookup failed for {address}, results may be incomplete"
+                    );
+                    self.warned = true;
+                }
+                self.disk_cache.insert_transient_miss(cache_key);
+                return None;
+            }
         };
 
         let Some(body) = resp.json::<serde_json::Value>().ok() else {
-            self.disk_cache.insert_miss(cache_key);
+            self.disk_cache.insert_transient_miss(cache_key);
             return None;
         };
 
