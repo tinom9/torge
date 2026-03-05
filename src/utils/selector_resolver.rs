@@ -4,9 +4,20 @@ use super::{
     hex_utils,
 };
 use reqwest::blocking::Client;
+use serde::Deserialize;
 
 /// Default Sourcify API base URL for 4byte mirror.
 const DEFAULT_SOURCIFY_4BYTE_URL: &str = "https://api.4byte.sourcify.dev/";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SelectorEntry {
+    name: Option<String>,
+    #[serde(default)]
+    has_verified_contract: bool,
+    #[serde(default)]
+    filtered: bool,
+}
 
 /// Best-effort function selector resolver using Sourcify's 4byte mirror with disk caching.
 pub struct SelectorResolver {
@@ -88,7 +99,7 @@ impl SelectorResolver {
             }
         };
 
-        let Some(body) = resp.json::<serde_json::Value>().ok() else {
+        let Ok(mut body) = resp.json::<serde_json::Value>() else {
             self.disk_cache.insert_transient_miss(key.to_owned());
             return None;
         };
@@ -98,15 +109,15 @@ impl SelectorResolver {
             return None;
         }
 
-        let entries = match body["result"][kind][key].as_array() {
-            Some(e) if !e.is_empty() => e,
-            _ => {
-                self.disk_cache.insert_miss(key.to_owned());
-                return None;
-            }
-        };
+        let entries: Vec<SelectorEntry> =
+            serde_json::from_value(body["result"][kind][key].take()).unwrap_or_default();
 
-        let Some(sig) = select_best_entry(entries, calldata) else {
+        if entries.is_empty() {
+            self.disk_cache.insert_miss(key.to_owned());
+            return None;
+        }
+
+        let Some(sig) = select_best_entry(&entries, calldata) else {
             self.disk_cache.insert_miss(key.to_owned());
             return None;
         };
@@ -122,14 +133,14 @@ impl SelectorResolver {
 /// decodable > first entry.
 ///
 /// When `calldata` is `None` (event lookups), returns the first entry.
-fn select_best_entry(entries: &[serde_json::Value], calldata: Option<&str>) -> Option<String> {
-    let name = |e: &serde_json::Value| e["name"].as_str().map(str::to_owned);
-    let verified = |e: &serde_json::Value| e["hasVerifiedContract"].as_bool().unwrap_or(false);
-    let filtered = |e: &serde_json::Value| e["filtered"].as_bool().unwrap_or(false);
+fn select_best_entry(entries: &[SelectorEntry], calldata: Option<&str>) -> Option<String> {
+    let name = |e: &SelectorEntry| e.name.clone();
+    let verified = |e: &SelectorEntry| e.has_verified_contract;
+    let filtered = |e: &SelectorEntry| e.filtered;
 
     if let Some(calldata) = calldata {
         let decodable =
-            |e: &serde_json::Value| name(e).is_some_and(|n| abi_decoder::can_decode(&n, calldata));
+            |e: &SelectorEntry| name(e).is_some_and(|n| abi_decoder::can_decode(&n, calldata));
 
         entries
             .iter()
@@ -158,15 +169,18 @@ fn select_best_entry(entries: &[serde_json::Value], calldata: Option<&str>) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     const DECODABLE_SIG: &str = "transfer(address,uint256)";
     const DECODABLE_SIG_ALT: &str = "approve(address,uint256)";
     const NON_DECODABLE_SIG: &str = "foo(address,address,address)";
     const CALLDATA: &str = "0xa9059cbb000000000000000000000000deadbeefdeadbeefdeadbeefdeadbeefdeadbeef00000000000000000000000000000000000000000000000000000000000003e8";
 
-    fn entry(name: &str, verified: bool, filtered: bool) -> serde_json::Value {
-        json!({"name": name, "hasVerifiedContract": verified, "filtered": filtered})
+    fn entry(name: &str, verified: bool, filtered: bool) -> SelectorEntry {
+        SelectorEntry {
+            name: Some(name.to_owned()),
+            has_verified_contract: verified,
+            filtered,
+        }
     }
 
     #[test]
@@ -209,7 +223,11 @@ mod tests {
 
     #[test]
     fn test_select_best_entry_missing_name() {
-        let entries = vec![json!({"hasVerifiedContract": true, "filtered": false})];
+        let entries = vec![SelectorEntry {
+            name: None,
+            has_verified_contract: true,
+            filtered: false,
+        }];
         assert_eq!(select_best_entry(&entries, Some(CALLDATA)), None);
     }
 
@@ -271,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_select_best_entry_empty() {
-        let entries: Vec<serde_json::Value> = vec![];
+        let entries: Vec<SelectorEntry> = vec![];
         assert_eq!(select_best_entry(&entries, Some(CALLDATA)), None);
     }
 
@@ -286,7 +304,11 @@ mod tests {
 
     #[test]
     fn test_select_best_entry_event_no_name() {
-        let entries = vec![json!({"hasVerifiedContract": true, "filtered": false})];
+        let entries = vec![SelectorEntry {
+            name: None,
+            has_verified_contract: true,
+            filtered: false,
+        }];
         assert_eq!(select_best_entry(&entries, None), None);
     }
 
@@ -304,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_select_best_entry_event_empty() {
-        let entries: Vec<serde_json::Value> = vec![];
+        let entries: Vec<SelectorEntry> = vec![];
         assert_eq!(select_best_entry(&entries, None), None);
     }
 }

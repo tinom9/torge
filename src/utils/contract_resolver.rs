@@ -1,8 +1,19 @@
 use super::disk_cache::{CacheLookup, DiskCache};
 use super::hex_utils;
 use reqwest::blocking::Client;
+use serde::Deserialize;
 
 const DEFAULT_SOURCIFY_SERVER_URL: &str = "https://sourcify.dev/server/";
+
+#[derive(Deserialize)]
+struct ContractInfo {
+    compilation: Option<Compilation>,
+}
+
+#[derive(Deserialize)]
+struct Compilation {
+    name: Option<String>,
+}
 
 /// Best-effort contract name resolver using Sourcify's v2 API with disk caching.
 pub struct ContractResolver {
@@ -76,21 +87,21 @@ impl ContractResolver {
             }
         };
 
-        let Some(body) = resp.json::<serde_json::Value>().ok() else {
+        let Ok(info) = resp.json::<ContractInfo>() else {
             self.disk_cache.insert_transient_miss(cache_key);
             return None;
         };
 
-        match body["compilation"]["name"].as_str() {
-            Some(name) if !name.is_empty() => {
-                let name = name.to_owned();
-                self.disk_cache.insert(cache_key, name.clone());
-                Some(name)
-            }
-            _ => {
-                self.disk_cache.insert_miss(cache_key);
-                None
-            }
+        if let Some(name) = info
+            .compilation
+            .and_then(|c| c.name)
+            .filter(|n| !n.is_empty())
+        {
+            self.disk_cache.insert(cache_key, name.clone());
+            Some(name)
+        } else {
+            self.disk_cache.insert_miss(cache_key);
+            None
         }
     }
 }
