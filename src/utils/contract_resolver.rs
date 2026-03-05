@@ -94,6 +94,11 @@ impl ContractResolver {
         };
 
         let Ok(info) = resp.json::<ContractInfo>() else {
+            if self.warning.is_none() {
+                self.warning = Some(format!(
+                    "sourcify contract response parse failed for {address}, results may be incomplete"
+                ));
+            }
             self.disk_cache.insert_transient_miss(cache_key);
             return None;
         };

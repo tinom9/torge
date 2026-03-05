@@ -101,6 +101,11 @@ impl SelectorResolver {
         };
 
         let Ok(mut body) = resp.json::<serde_json::Value>() else {
+            if self.warning.is_none() {
+                self.warning = Some(format!(
+                    "sourcify selector response parse failed for {key}, results may be incomplete"
+                ));
+            }
             self.disk_cache.insert_transient_miss(key.to_owned());
             return None;
         };
