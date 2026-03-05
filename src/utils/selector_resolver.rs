@@ -1,6 +1,7 @@
 use super::{
     abi_decoder,
     disk_cache::{CacheLookup, DiskCache},
+    hex_utils,
 };
 use reqwest::blocking::Client;
 
@@ -59,7 +60,7 @@ impl SelectorResolver {
         expected_len: usize,
         calldata: Option<&str>,
     ) -> Option<String> {
-        if !self.enabled || !key.starts_with("0x") || key.len() != expected_len {
+        if !self.enabled || hex_utils::require_0x(key).is_none() || key.len() != expected_len {
             return None;
         }
 

@@ -1,4 +1,5 @@
 use super::disk_cache::{CacheLookup, DiskCache};
+use super::hex_utils;
 use reqwest::blocking::Client;
 
 const DEFAULT_SOURCIFY_SERVER_URL: &str = "https://sourcify.dev/server/";
@@ -40,7 +41,7 @@ impl ContractResolver {
             return None;
         }
         let chain_id = self.chain_id.as_deref()?;
-        if !address.starts_with("0x") || address.len() != 42 {
+        if hex_utils::require_0x(address).is_none() || address.len() != 42 {
             return None;
         }
 
