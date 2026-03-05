@@ -12,13 +12,7 @@ pub struct TxArgs {
 }
 
 pub fn run(args: TxArgs) -> Result<(), TraceError> {
-    trace::validate_hex(&args.tx_hash, "tx_hash")?;
-    if args.tx_hash.len() != 66 {
-        return Err(TraceError::InvalidInput(format!(
-            "tx_hash: expected 64 hex chars, got {}",
-            args.tx_hash.len() - 2
-        )));
-    }
+    trace::validate_tx_hash(&args.tx_hash, "tx_hash")?;
 
     let TxArgs { tx_hash, opts } = args;
 

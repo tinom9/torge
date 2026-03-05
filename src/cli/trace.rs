@@ -150,17 +150,19 @@ fn resolve_rpc_url(url_or_alias: Option<String>) -> Result<String, TraceError> {
 
 /// Validate that a string is a 0x-prefixed Ethereum address (40 hex chars).
 pub fn validate_address(addr: &str, field: &str) -> Result<(), TraceError> {
-    let hex = hex_utils::require_0x(addr)
-        .ok_or_else(|| TraceError::InvalidInput(format!("{field}: missing 0x prefix")))?;
-    if hex.len() != 40 {
+    if !hex_utils::is_valid_address(addr) {
         return Err(TraceError::InvalidInput(format!(
-            "{field}: expected 40 hex chars, got {}",
-            hex.len()
+            "{field}: expected 0x-prefixed 40-char hex address"
         )));
     }
-    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+    Ok(())
+}
+
+/// Validate that a string is a 0x-prefixed transaction hash (64 hex chars).
+pub fn validate_tx_hash(hash: &str, field: &str) -> Result<(), TraceError> {
+    if !hex_utils::is_valid_tx_hash(hash) {
         return Err(TraceError::InvalidInput(format!(
-            "{field}: invalid hex characters"
+            "{field}: expected 0x-prefixed 64-char hex hash"
         )));
     }
     Ok(())
