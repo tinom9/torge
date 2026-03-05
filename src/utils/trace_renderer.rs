@@ -1,9 +1,31 @@
-use crate::cli::trace::CallTrace;
 use crate::utils::{
-    abi_decoder, color::Palette, contract_resolver::ContractResolver, event_formatter::print_log,
-    hex_utils, precompiles, selector_resolver::SelectorResolver,
+    abi_decoder,
+    color::Palette,
+    contract_resolver::ContractResolver,
+    event_formatter::{self, print_log},
+    hex_utils, precompiles,
+    selector_resolver::SelectorResolver,
 };
 use alloy_dyn_abi::{DynSolType, DynSolValue};
+use serde::Deserialize;
+
+/// Result shape for geth-style `callTracer`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallTrace {
+    #[serde(rename = "type")]
+    pub call_type: Option<String>,
+    pub to: Option<String>,
+    pub value: Option<String>,
+    pub gas_used: Option<String>,
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    #[serde(default)]
+    pub logs: Vec<event_formatter::Log>,
+    #[serde(default)]
+    pub calls: Vec<CallTrace>,
+}
 
 pub(crate) fn print_trace(
     root: &CallTrace,

@@ -1,11 +1,10 @@
 use crate::utils::{
     color::Palette,
     contract_resolver::ContractResolver,
-    event_formatter::Log,
     hex_utils, rpc_url,
     selector_resolver::SelectorResolver,
     storage_diff::{self, PrestateDiff},
-    trace_renderer,
+    trace_renderer::{self, CallTrace},
 };
 use clap::Parser;
 use reqwest::blocking::Client;
@@ -109,24 +108,6 @@ struct RpcResponse<T> {
 struct RpcError {
     code: i64,
     message: String,
-}
-
-/// Result shape for geth-style `callTracer`.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CallTrace {
-    #[serde(rename = "type")]
-    pub call_type: Option<String>,
-    pub to: Option<String>,
-    pub value: Option<String>,
-    pub gas_used: Option<String>,
-    pub input: Option<String>,
-    pub output: Option<String>,
-    pub error: Option<String>,
-    #[serde(default)]
-    pub logs: Vec<Log>,
-    #[serde(default)]
-    pub calls: Vec<CallTrace>,
 }
 
 /// Create a pre-configured HTTP client for RPC calls.
