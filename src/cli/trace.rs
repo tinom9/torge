@@ -216,20 +216,8 @@ pub fn prestate_tracer_config() -> serde_json::Value {
 /// Fetch the chain ID from the RPC node as a decimal string (e.g. `"1"`).
 fn fetch_chain_id(client: &Client, rpc_url: &str) -> Result<String, TraceError> {
     let payload = rpc_payload(1, "eth_chainId", serde_json::json!([]));
-
     let resp = client.post(rpc_url).json(&payload).send()?;
-    let body: RpcResponse<String> = resp
-        .json()
-        .map_err(|e| TraceError::Decode(format!("eth_chainId: invalid JSON: {e}")))?;
-
-    if let Some(err) = body.error {
-        return Err(TraceError::Rpc(err.message, err.code));
-    }
-
-    let hex_str = body
-        .result
-        .ok_or_else(|| TraceError::Decode("eth_chainId: missing result".into()))?;
-
+    let hex_str: String = parse_rpc_response(resp)?;
     parse_chain_id_hex(&hex_str)
 }
 
