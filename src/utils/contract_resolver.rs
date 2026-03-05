@@ -26,9 +26,15 @@ pub struct ContractResolver {
 }
 
 impl ContractResolver {
-    pub fn new(client: Client, chain_id: Option<String>, enabled: bool) -> Self {
-        let mut base_url = std::env::var("SOURCIFY_SERVER_URL")
-            .unwrap_or_else(|_| DEFAULT_SOURCIFY_SERVER_URL.to_owned());
+    pub fn new(
+        client: Client,
+        chain_id: Option<String>,
+        enabled: bool,
+        base_url: Option<String>,
+    ) -> Self {
+        let mut base_url = base_url
+            .or_else(|| std::env::var("SOURCIFY_SERVER_URL").ok())
+            .unwrap_or_else(|| DEFAULT_SOURCIFY_SERVER_URL.to_owned());
         if !base_url.ends_with('/') {
             base_url.push('/');
         }

@@ -266,6 +266,7 @@ mod tests {
         let mut resolver = crate::utils::selector_resolver::SelectorResolver::new(
             reqwest::blocking::Client::new(),
             false,
+            None,
         );
         let output = "0x08c379a0\
             0000000000000000000000000000000000000000000000000000000000000020\
@@ -279,6 +280,7 @@ mod tests {
         let mut resolver = crate::utils::selector_resolver::SelectorResolver::new(
             reqwest::blocking::Client::new(),
             false,
+            None,
         );
         let output = "0xdeadbeef0000000000000000000000000000000000000000000000000000000000000001";
         assert!(decode_custom_revert(output, &mut resolver).is_none());

@@ -288,8 +288,9 @@ pub fn execute_and_print(
         Palette::auto()
     };
 
-    let mut selector_resolver = SelectorResolver::new(client.clone(), opts.resolve_selectors);
-    let mut contract_resolver = ContractResolver::new(client, chain_id, opts.resolve_contracts);
+    let mut selector_resolver = SelectorResolver::new(client.clone(), opts.resolve_selectors, None);
+    let mut contract_resolver =
+        ContractResolver::new(client, chain_id, opts.resolve_contracts, None);
     trace_renderer::print_trace(
         &call_trace,
         &mut selector_resolver,
