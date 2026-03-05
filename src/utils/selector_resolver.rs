@@ -1,6 +1,6 @@
 use super::{
     abi_decoder,
-    disk_cache::{CacheLookup, DiskCache},
+    disk_cache::{CacheLookup, DiskCache, SELECTOR_CACHE},
     hex_utils,
 };
 use reqwest::blocking::Client;
@@ -38,7 +38,7 @@ impl SelectorResolver {
         }
         Self {
             client,
-            disk_cache: DiskCache::load("selectors"),
+            disk_cache: DiskCache::load(SELECTOR_CACHE),
             base_url,
             enabled,
             warning: None,

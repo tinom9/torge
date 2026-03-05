@@ -1,4 +1,4 @@
-use super::disk_cache::{CacheLookup, DiskCache};
+use super::disk_cache::{CacheLookup, DiskCache, CONTRACT_CACHE};
 use super::hex_utils;
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -40,7 +40,7 @@ impl ContractResolver {
         }
         Self {
             client,
-            disk_cache: DiskCache::load("contracts"),
+            disk_cache: DiskCache::load(CONTRACT_CACHE),
             base_url,
             chain_id,
             enabled,
