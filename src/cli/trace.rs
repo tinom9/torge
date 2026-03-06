@@ -354,6 +354,21 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_tx_hash() {
+        assert!(validate_tx_hash(
+            "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "hash"
+        )
+        .is_ok());
+        assert!(validate_tx_hash("0x1234", "hash").is_err());
+        assert!(validate_tx_hash(
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "hash"
+        )
+        .is_err());
+    }
+
+    #[test]
     fn test_validate_address_uppercase_prefix() {
         assert!(validate_address("0XdAC17F958D2ee523a2206206994597C13D831ec7", "to").is_ok());
     }
