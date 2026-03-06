@@ -1,11 +1,10 @@
 use crate::utils::{
     color::Palette,
     contract_resolver::ContractResolver,
-    event_formatter::Log,
     hex_utils, rpc_url,
     selector_resolver::SelectorResolver,
     storage_diff::{self, PrestateDiff},
-    trace_renderer,
+    trace_renderer::{self, CallTrace},
 };
 use clap::Parser;
 use reqwest::blocking::Client;
@@ -111,24 +110,6 @@ struct RpcError {
     message: String,
 }
 
-/// Result shape for geth-style `callTracer`.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CallTrace {
-    #[serde(rename = "type")]
-    pub call_type: Option<String>,
-    pub to: Option<String>,
-    pub value: Option<String>,
-    pub gas_used: Option<String>,
-    pub input: Option<String>,
-    pub output: Option<String>,
-    pub error: Option<String>,
-    #[serde(default)]
-    pub logs: Vec<Log>,
-    #[serde(default)]
-    pub calls: Vec<CallTrace>,
-}
-
 /// Create a pre-configured HTTP client for RPC calls.
 fn create_client(no_proxy: bool) -> Result<Client, TraceError> {
     let mut builder = Client::builder().timeout(Duration::from_secs(60));
@@ -150,17 +131,19 @@ fn resolve_rpc_url(url_or_alias: Option<String>) -> Result<String, TraceError> {
 
 /// Validate that a string is a 0x-prefixed Ethereum address (40 hex chars).
 pub fn validate_address(addr: &str, field: &str) -> Result<(), TraceError> {
-    let hex = hex_utils::require_0x(addr)
-        .ok_or_else(|| TraceError::InvalidInput(format!("{field}: missing 0x prefix")))?;
-    if hex.len() != 40 {
+    if !hex_utils::is_valid_address(addr) {
         return Err(TraceError::InvalidInput(format!(
-            "{field}: expected 40 hex chars, got {}",
-            hex.len()
+            "{field}: expected 0x-prefixed 40-char hex address"
         )));
     }
-    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+    Ok(())
+}
+
+/// Validate that a string is a 0x-prefixed transaction hash (64 hex chars).
+pub fn validate_tx_hash(hash: &str, field: &str) -> Result<(), TraceError> {
+    if !hex_utils::is_valid_tx_hash(hash) {
         return Err(TraceError::InvalidInput(format!(
-            "{field}: invalid hex characters"
+            "{field}: expected 0x-prefixed 64-char hex hash"
         )));
     }
     Ok(())
@@ -216,20 +199,8 @@ pub fn prestate_tracer_config() -> serde_json::Value {
 /// Fetch the chain ID from the RPC node as a decimal string (e.g. `"1"`).
 fn fetch_chain_id(client: &Client, rpc_url: &str) -> Result<String, TraceError> {
     let payload = rpc_payload(1, "eth_chainId", serde_json::json!([]));
-
     let resp = client.post(rpc_url).json(&payload).send()?;
-    let body: RpcResponse<String> = resp
-        .json()
-        .map_err(|e| TraceError::Decode(format!("eth_chainId: invalid JSON: {e}")))?;
-
-    if let Some(err) = body.error {
-        return Err(TraceError::Rpc(err.message, err.code));
-    }
-
-    let hex_str = body
-        .result
-        .ok_or_else(|| TraceError::Decode("eth_chainId: missing result".into()))?;
-
+    let hex_str: String = parse_rpc_response(resp)?;
     parse_chain_id_hex(&hex_str)
 }
 
@@ -298,8 +269,9 @@ pub fn execute_and_print(
         Palette::auto()
     };
 
-    let mut selector_resolver = SelectorResolver::new(client.clone(), opts.resolve_selectors);
-    let mut contract_resolver = ContractResolver::new(client, chain_id, opts.resolve_contracts);
+    let mut selector_resolver = SelectorResolver::new(client.clone(), opts.resolve_selectors, None);
+    let mut contract_resolver =
+        ContractResolver::new(client, chain_id, opts.resolve_contracts, None);
     trace_renderer::print_trace(
         &call_trace,
         &mut selector_resolver,
@@ -379,6 +351,21 @@ mod tests {
         assert!(validate_hex("0xGGGG", "data").is_err());
         assert!(validate_hex("0xabc", "data").is_err()); // odd length
         assert!(validate_hex("0xab", "data").is_ok());
+    }
+
+    #[test]
+    fn test_validate_tx_hash() {
+        assert!(validate_tx_hash(
+            "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "hash"
+        )
+        .is_ok());
+        assert!(validate_tx_hash("0x1234", "hash").is_err());
+        assert!(validate_tx_hash(
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "hash"
+        )
+        .is_err());
     }
 
     #[test]

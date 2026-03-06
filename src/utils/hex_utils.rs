@@ -10,6 +10,14 @@ pub fn require_0x(s: &str) -> Option<&str> {
     s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
 }
 
+pub fn is_valid_address(s: &str) -> bool {
+    require_0x(s).is_some_and(|h| h.len() == 40 && h.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+pub fn is_valid_tx_hash(s: &str) -> bool {
+    require_0x(s).is_some_and(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
 pub fn parse_hex_u256(s: &str) -> Option<U256> {
     let s = strip_0x(s);
     U256::from_str_radix(s, 16).ok()
@@ -34,6 +42,34 @@ mod tests {
         assert_eq!(require_0x("0Xabc"), Some("abc"));
         assert_eq!(require_0x("abc"), None);
         assert_eq!(require_0x("0x"), Some(""));
+    }
+
+    #[test]
+    fn test_is_valid_address() {
+        assert!(is_valid_address(
+            "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+        ));
+        assert!(is_valid_address(
+            "0XdAC17F958D2ee523a2206206994597C13D831ec7"
+        ));
+        assert!(!is_valid_address(
+            "dAC17F958D2ee523a2206206994597C13D831ec7"
+        ));
+        assert!(!is_valid_address("0x1234"));
+        assert!(!is_valid_address(
+            "0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+        ));
+    }
+
+    #[test]
+    fn test_is_valid_tx_hash() {
+        assert!(is_valid_tx_hash(
+            "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        ));
+        assert!(!is_valid_tx_hash("0x1234"));
+        assert!(!is_valid_tx_hash(
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        ));
     }
 
     #[test]

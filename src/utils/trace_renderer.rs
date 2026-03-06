@@ -1,9 +1,31 @@
-use crate::cli::trace::CallTrace;
 use crate::utils::{
-    abi_decoder, color::Palette, contract_resolver::ContractResolver, event_formatter::print_log,
-    hex_utils, precompiles, selector_resolver::SelectorResolver,
+    abi_decoder,
+    color::Palette,
+    contract_resolver::ContractResolver,
+    event_formatter::{self, print_log},
+    hex_utils, precompiles,
+    selector_resolver::SelectorResolver,
 };
 use alloy_dyn_abi::{DynSolType, DynSolValue};
+use serde::Deserialize;
+
+/// Result shape for geth-style `callTracer`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallTrace {
+    #[serde(rename = "type")]
+    pub call_type: Option<String>,
+    pub to: Option<String>,
+    pub value: Option<String>,
+    pub gas_used: Option<String>,
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    #[serde(default)]
+    pub logs: Vec<event_formatter::Log>,
+    #[serde(default)]
+    pub calls: Vec<CallTrace>,
+}
 
 pub(crate) fn print_trace(
     root: &CallTrace,
@@ -196,7 +218,7 @@ fn print_call(
         }
     } else if decode_attempted {
         if let Some(input) = &node.input {
-            let s = input.strip_prefix("0x").unwrap_or(input);
+            let s = hex_utils::strip_0x(input);
             if s.len() > 8 {
                 println!(
                     "{meta_prefix}{}",
@@ -265,7 +287,7 @@ fn format_call_desc(
 }
 
 pub(crate) fn extract_selector(input: &str) -> Option<String> {
-    let s = input.strip_prefix("0x").unwrap_or(input);
+    let s = hex_utils::strip_0x(input);
     s.get(..8).map(|sel| format!("0x{sel}"))
 }
 
@@ -324,5 +346,13 @@ mod tests {
             Some("0xa9059cbb".to_string())
         );
         assert_eq!(extract_selector("0x123"), None);
+    }
+
+    #[test]
+    fn test_extract_selector_uppercase_prefix() {
+        assert_eq!(
+            extract_selector("0Xa9059cbb000000"),
+            Some("0xa9059cbb".to_string())
+        );
     }
 }

@@ -1,10 +1,8 @@
-use crate::utils::disk_cache::{CacheError, DiskCache};
+use crate::utils::disk_cache::{CacheError, DiskCache, ALL_CACHE_KINDS};
 use clap::Parser;
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
-
-const CACHE_KINDS: &[&str] = &["selectors", "contracts"];
 
 #[derive(Parser, Debug)]
 pub struct CleanArgs {
@@ -26,7 +24,7 @@ pub enum CleanError {
 pub fn run(args: CleanArgs) -> Result<(), CleanError> {
     let mut found_any = false;
 
-    for kind in CACHE_KINDS {
+    for kind in ALL_CACHE_KINDS {
         let Some(path) = DiskCache::cache_path(kind) else {
             continue;
         };
@@ -49,7 +47,8 @@ pub fn run(args: CleanArgs) -> Result<(), CleanError> {
     }
 
     if !found_any {
-        match DiskCache::cache_path(CACHE_KINDS[0]).and_then(|p| p.parent().map(Path::to_owned)) {
+        match DiskCache::cache_path(ALL_CACHE_KINDS[0]).and_then(|p| p.parent().map(Path::to_owned))
+        {
             Some(dir) => println!("no cache files found in {}", dir.display()),
             None => println!("no cache files found (could not determine cache directory)"),
         }

@@ -1,7 +1,19 @@
-use super::disk_cache::{CacheLookup, DiskCache};
+use super::disk_cache::{CacheLookup, DiskCache, CONTRACT_CACHE};
+use super::hex_utils;
 use reqwest::blocking::Client;
+use serde::Deserialize;
 
 const DEFAULT_SOURCIFY_SERVER_URL: &str = "https://sourcify.dev/server/";
+
+#[derive(Deserialize)]
+struct ContractInfo {
+    compilation: Option<Compilation>,
+}
+
+#[derive(Deserialize)]
+struct Compilation {
+    name: Option<String>,
+}
 
 /// Best-effort contract name resolver using Sourcify's v2 API with disk caching.
 pub struct ContractResolver {
@@ -14,15 +26,21 @@ pub struct ContractResolver {
 }
 
 impl ContractResolver {
-    pub fn new(client: Client, chain_id: Option<String>, enabled: bool) -> Self {
-        let mut base_url = std::env::var("SOURCIFY_SERVER_URL")
-            .unwrap_or_else(|_| DEFAULT_SOURCIFY_SERVER_URL.to_owned());
+    pub fn new(
+        client: Client,
+        chain_id: Option<String>,
+        enabled: bool,
+        base_url: Option<String>,
+    ) -> Self {
+        let mut base_url = base_url
+            .or_else(|| std::env::var("SOURCIFY_SERVER_URL").ok())
+            .unwrap_or_else(|| DEFAULT_SOURCIFY_SERVER_URL.to_owned());
         if !base_url.ends_with('/') {
             base_url.push('/');
         }
         Self {
             client,
-            disk_cache: DiskCache::load("contracts"),
+            disk_cache: DiskCache::load(CONTRACT_CACHE),
             base_url,
             chain_id,
             enabled,
@@ -40,7 +58,7 @@ impl ContractResolver {
             return None;
         }
         let chain_id = self.chain_id.as_deref()?;
-        if !address.starts_with("0x") || address.len() != 42 {
+        if !hex_utils::is_valid_address(address) {
             return None;
         }
 
@@ -75,21 +93,26 @@ impl ContractResolver {
             }
         };
 
-        let Some(body) = resp.json::<serde_json::Value>().ok() else {
+        let Ok(info) = resp.json::<ContractInfo>() else {
+            if self.warning.is_none() {
+                self.warning = Some(format!(
+                    "sourcify contract response parse failed for {address}, results may be incomplete"
+                ));
+            }
             self.disk_cache.insert_transient_miss(cache_key);
             return None;
         };
 
-        match body["compilation"]["name"].as_str() {
-            Some(name) if !name.is_empty() => {
-                let name = name.to_owned();
-                self.disk_cache.insert(cache_key, name.clone());
-                Some(name)
-            }
-            _ => {
-                self.disk_cache.insert_miss(cache_key);
-                None
-            }
+        if let Some(name) = info
+            .compilation
+            .and_then(|c| c.name)
+            .filter(|n| !n.is_empty())
+        {
+            self.disk_cache.insert(cache_key, name.clone());
+            Some(name)
+        } else {
+            self.disk_cache.insert_miss(cache_key);
+            None
         }
     }
 }

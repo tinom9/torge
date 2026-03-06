@@ -7,6 +7,10 @@ use thiserror::Error;
 
 const CACHE_MISS_MARKER: &str = "<UNKNOWN>";
 
+pub const SELECTOR_CACHE: &str = "selectors";
+pub const CONTRACT_CACHE: &str = "contracts";
+pub const ALL_CACHE_KINDS: &[&str] = &[SELECTOR_CACHE, CONTRACT_CACHE];
+
 /// Result of looking up a key in the cache.
 #[derive(Debug)]
 pub enum CacheLookup<'a> {
