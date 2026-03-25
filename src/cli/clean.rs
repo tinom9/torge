@@ -2,7 +2,6 @@ use crate::utils::disk_cache::{CacheError, DiskCache, ALL_CACHE_KINDS};
 use clap::Parser;
 use std::fs;
 use std::path::Path;
-use thiserror::Error;
 
 #[derive(Parser, Debug)]
 pub struct CleanArgs {
@@ -11,17 +10,7 @@ pub struct CleanArgs {
     pub only_unknown: bool,
 }
 
-#[derive(Debug, Error)]
-pub enum CleanError {
-    #[error("{0}")]
-    Cache(#[from] CacheError),
-
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-#[allow(clippy::needless_pass_by_value)] // clap produces owned values
-pub fn run(args: CleanArgs) -> Result<(), CleanError> {
+pub fn run(args: &CleanArgs) -> Result<(), CacheError> {
     let mut found_any = false;
 
     for kind in ALL_CACHE_KINDS {

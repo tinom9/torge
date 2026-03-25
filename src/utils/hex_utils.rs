@@ -1,21 +1,19 @@
 use alloy_primitives::U256;
 
-pub fn strip_0x(s: &str) -> &str {
-    s.strip_prefix("0x")
-        .or_else(|| s.strip_prefix("0X"))
-        .unwrap_or(s)
-}
-
 pub fn require_0x(s: &str) -> Option<&str> {
     s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
 }
 
+pub fn strip_0x(s: &str) -> &str {
+    require_0x(s).unwrap_or(s)
+}
+
 pub fn is_valid_address(s: &str) -> bool {
-    require_0x(s).is_some_and(|h| h.len() == 40 && h.chars().all(|c| c.is_ascii_hexdigit()))
+    require_0x(s).is_some_and(|h| h.len() == 40 && h.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 pub fn is_valid_tx_hash(s: &str) -> bool {
-    require_0x(s).is_some_and(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()))
+    require_0x(s).is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 pub fn parse_hex_u256(s: &str) -> Option<U256> {
@@ -28,20 +26,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_require_0x() {
+        assert_eq!(require_0x("0xabc"), Some("abc"));
+        assert_eq!(require_0x("0Xabc"), Some("abc"));
+        assert_eq!(require_0x("abc"), None);
+        assert_eq!(require_0x("0x"), Some(""));
+    }
+
+    #[test]
     fn test_strip_0x() {
         assert_eq!(strip_0x("0xabc"), "abc");
         assert_eq!(strip_0x("0Xabc"), "abc");
         assert_eq!(strip_0x("abc"), "abc");
         assert_eq!(strip_0x("0x"), "");
         assert_eq!(strip_0x("0X"), "");
-    }
-
-    #[test]
-    fn test_require_0x() {
-        assert_eq!(require_0x("0xabc"), Some("abc"));
-        assert_eq!(require_0x("0Xabc"), Some("abc"));
-        assert_eq!(require_0x("abc"), None);
-        assert_eq!(require_0x("0x"), Some(""));
     }
 
     #[test]

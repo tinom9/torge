@@ -229,5 +229,6 @@ mod tests {
         cache.insert_transient_miss("0xdeadbeef".to_owned());
         assert!(matches!(cache.lookup("0xdeadbeef"), CacheLookup::Miss));
         assert!(!cache.entries.contains_key("0xdeadbeef"));
+        assert!(cache.transient_misses.contains("0xdeadbeef"));
     }
 }

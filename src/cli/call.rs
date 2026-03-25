@@ -157,7 +157,7 @@ fn parse_block_id(block: &str) -> Result<String, TraceError> {
             let num: u64 = s.parse().map_err(|_| {
                 TraceError::InvalidInput(format!("--block: invalid block identifier '{s}'"))
             })?;
-            Ok(format!("0x{num:x}"))
+            Ok(format!("{num:#x}"))
         }
     }
 }
