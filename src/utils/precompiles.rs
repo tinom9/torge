@@ -3,35 +3,24 @@
 /// Precompiled contracts are at addresses 0x01-0x0a (and potentially higher in newer forks).
 /// Returns `Some((name, signature))` if the address is a known precompile, `None` otherwise.
 pub fn get_precompile_info(address: &str) -> Option<(&'static str, &'static str)> {
-    let addr = super::hex_utils::strip_0x(address);
-
-    // Full 40-char addresses: precompiles have 38+ leading zeros.
-    // Short-circuit: if the non-zero portion is beyond 0x0a, it's not a precompile.
-    if addr.len() == 40 && !addr[..24].chars().all(|c| c == '0') {
-        return None;
-    }
-
-    let normalized = if addr.len() == 40 { &addr[24..] } else { addr };
-
-    // Lowercase only the short suffix for matching.
-    let normalized_lower = normalized.to_lowercase();
-
-    match normalized_lower.as_str() {
-        "0000000000000001" | "01" | "1" => {
+    match super::hex_utils::strip_0x(address)
+        .trim_start_matches('0')
+        .to_lowercase()
+        .as_str()
+    {
+        "1" => {
             // ecrecover takes 128 bytes: hash(32) + v(32) + r(32) + s(32).
             Some(("ecrecover", "ecrecover(bytes32,uint8,uint256,uint256)"))
         }
-        "0000000000000002" | "02" | "2" => Some(("sha256", "sha256(bytes)")),
-        "0000000000000003" | "03" | "3" => Some(("ripemd160", "ripemd160(bytes)")),
-        "0000000000000004" | "04" | "4" => Some(("identity", "identity(bytes)")),
-        "0000000000000005" | "05" | "5" => {
-            Some(("modexp", "modexp(uint256,uint256,uint256,bytes)"))
-        }
-        "0000000000000006" | "06" | "6" => Some(("ecadd", "ecadd(bytes)")),
-        "0000000000000007" | "07" | "7" => Some(("ecmul", "ecmul(bytes)")),
-        "0000000000000008" | "08" | "8" => Some(("ecpairing", "ecpairing(bytes)")),
-        "0000000000000009" | "09" | "9" => Some(("blake2f", "blake2f(bytes)")),
-        "000000000000000a" | "0a" | "a" => Some(("pointevaluation", "pointevaluation(bytes)")),
+        "2" => Some(("sha256", "sha256(bytes)")),
+        "3" => Some(("ripemd160", "ripemd160(bytes)")),
+        "4" => Some(("identity", "identity(bytes)")),
+        "5" => Some(("modexp", "modexp(uint256,uint256,uint256,bytes)")),
+        "6" => Some(("ecadd", "ecadd(bytes)")),
+        "7" => Some(("ecmul", "ecmul(bytes)")),
+        "8" => Some(("ecpairing", "ecpairing(bytes)")),
+        "9" => Some(("blake2f", "blake2f(bytes)")),
+        "a" => Some(("pointevaluation", "pointevaluation(bytes)")),
         _ => None,
     }
 }

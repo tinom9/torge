@@ -12,40 +12,36 @@ pub fn parse_value(s: &str) -> Result<String, String> {
 
     if let Some(hex) = hex_utils::require_0x(s) {
         let v = U256::from_str_radix(hex, 16).map_err(|_| format!("invalid hex value: {s}"))?;
-        return Ok(format!("0x{v:x}"));
+        return Ok(format!("{v:#x}"));
     }
 
     if let Some(num_str) = s.strip_suffix("ether") {
         let wei = to_wei(num_str, 18)?;
-        return Ok(format!("0x{wei:x}"));
+        return Ok(format!("{wei:#x}"));
     }
 
     if let Some(num_str) = s.strip_suffix("gwei") {
         let wei = to_wei(num_str, 9)?;
-        return Ok(format!("0x{wei:x}"));
+        return Ok(format!("{wei:#x}"));
     }
 
     if let Some(num_str) = s.strip_suffix("wei") {
         let v = U256::from_str_radix(num_str, 10).map_err(|_| format!("invalid value: {s}"))?;
-        return Ok(format!("0x{v:x}"));
+        return Ok(format!("{v:#x}"));
     }
 
     let v = U256::from_str_radix(s, 10).map_err(|_| format!("invalid value: {s}"))?;
-    Ok(format!("0x{v:x}"))
+    Ok(format!("{v:#x}"))
 }
 
 /// Convert a possibly-decimal number string to wei given the unit's decimal count.
-fn to_wei(num_str: &str, decimals: u32) -> Result<U256, String> {
-    let num_str = num_str.trim();
-
-    let (combined, frac_len) = match num_str.find('.') {
-        Some(dot) => {
-            let frac = &num_str[dot + 1..];
-            if frac.len() > decimals as usize {
+fn to_wei(num_str: &str, decimals: usize) -> Result<U256, String> {
+    let (combined, frac_len) = match num_str.split_once('.') {
+        Some((int_part, frac)) => {
+            if frac.len() > decimals {
                 return Err(format!("too many decimal places: {num_str}"));
             }
-            #[allow(clippy::cast_possible_truncation)] // frac.len() <= 18 (validated above)
-            (format!("{}{frac}", &num_str[..dot]), frac.len() as u32)
+            (format!("{int_part}{frac}"), frac.len())
         }
         None => (num_str.to_string(), 0),
     };
@@ -77,11 +73,12 @@ mod tests {
     #[test]
     fn test_parse_value_ether() {
         assert_eq!(parse_value("1ether").unwrap(), "0xde0b6b3a7640000");
+        assert_eq!(parse_value("1.ether").unwrap(), "0xde0b6b3a7640000");
         assert_eq!(parse_value("0.000000000000000001ether").unwrap(), "0x1");
 
         let result = parse_value("1.010101010101010101ether").unwrap();
         let expected = U256::from(1_010_101_010_101_010_101u128);
-        assert_eq!(result, format!("0x{expected:x}"));
+        assert_eq!(result, format!("{expected:#x}"));
     }
 
     #[test]
