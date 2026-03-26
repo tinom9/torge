@@ -1,5 +1,5 @@
 use super::hex_utils;
-use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt};
+use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt, Specifier};
 use alloy_json_abi::Function;
 
 /// Decode ABI-encoded function arguments (strips 4-byte selector).
@@ -30,7 +30,7 @@ pub fn can_decode(signature: &str, calldata: &str) -> bool {
 /// Decode a revert reason from raw output bytes (0x-prefixed hex).
 ///
 /// Recognises `Error(string)` (0x08c379a0) and `Panic(uint256)` (0x4e487b71).
-/// Returns `None` for unknown selectors — use [`decode_custom_revert`] as fallback.
+/// Returns `None` for unknown selectors.
 pub fn decode_revert_reason(output: &str) -> Option<String> {
     let hex = hex_utils::strip_0x(output);
     if hex.len() < 8 {
@@ -60,35 +60,6 @@ pub fn decode_revert_reason(output: &str) -> Option<String> {
     }
 }
 
-/// Try to decode a custom error by resolving its 4-byte selector via Sourcify.
-///
-/// Falls back to returning the raw signature if arguments cannot be decoded.
-pub fn decode_custom_revert(
-    output: &str,
-    resolver: &mut super::selector_resolver::SelectorResolver,
-) -> Option<String> {
-    let hex = hex_utils::strip_0x(output);
-    if hex.len() < 8 {
-        return None;
-    }
-
-    let selector = &hex[..8];
-    if selector == "08c379a0" || selector == "4e487b71" {
-        return None;
-    }
-
-    let prefixed = format!("0x{selector}");
-    let signature = resolver.resolve(&prefixed, Some(output))?;
-    let name = signature.split('(').next().unwrap_or(&signature);
-
-    if let Some(args) = decode_function_args(&signature, output) {
-        let formatted: Vec<String> = args.iter().map(|(_, v)| format_value(v)).collect();
-        Some(format!("{name}({})", formatted.join(", ")))
-    } else {
-        Some(signature)
-    }
-}
-
 pub fn format_value(value: &DynSolValue) -> String {
     match value {
         DynSolValue::Address(a) => format!("{a:#x}"),
@@ -115,19 +86,17 @@ fn decode_hex(input: &str) -> Option<Vec<u8>> {
 }
 
 fn decode_with_function(signature: &str, data: &[u8]) -> Option<Vec<(DynSolType, DynSolValue)>> {
-    let func = Function::parse(signature).ok()?;
-    let types = resolve_types(&func)?;
+    let func: Function = Function::parse(signature).ok()?;
     let values = func.abi_decode_input(data).ok()?;
-    Some(types.into_iter().zip(values).collect())
-}
-
-fn resolve_types(func: &Function) -> Option<Vec<DynSolType>> {
     func.inputs
         .iter()
-        .map(|p| p.selector_type().parse().ok())
-        .collect()
+        .zip(values)
+        .map(|(p, v)| p.resolve().ok().map(|t| (t, v)))
+        .collect::<Option<Vec<_>>>()
 }
 
+/// Get the description of a Solidity panic code.
+/// <https://docs.soliditylang.org/en/v0.8.34/control-structures.html#panic-via-assert-and-error-via-require>
 fn panic_description(code: &str) -> &'static str {
     match code {
         "0" => "generic/compiler-inserted",
@@ -259,30 +228,5 @@ mod tests {
     #[test]
     fn test_decode_revert_too_short() {
         assert!(decode_revert_reason("0x1234").is_none());
-    }
-
-    #[test]
-    fn test_decode_custom_revert_skips_builtins() {
-        let mut resolver = crate::utils::selector_resolver::SelectorResolver::new(
-            reqwest::blocking::Client::new(),
-            false,
-            None,
-        );
-        let output = "0x08c379a0\
-            0000000000000000000000000000000000000000000000000000000000000020\
-            0000000000000000000000000000000000000000000000000000000000000005\
-            68656c6c6f000000000000000000000000000000000000000000000000000000";
-        assert!(decode_custom_revert(output, &mut resolver).is_none());
-    }
-
-    #[test]
-    fn test_decode_custom_revert_unknown_no_resolver() {
-        let mut resolver = crate::utils::selector_resolver::SelectorResolver::new(
-            reqwest::blocking::Client::new(),
-            false,
-            None,
-        );
-        let output = "0xdeadbeef0000000000000000000000000000000000000000000000000000000000000001";
-        assert!(decode_custom_revert(output, &mut resolver).is_none());
     }
 }

@@ -160,15 +160,7 @@ fn print_call(
     println!("{prefix}{connector}{gas_display} {call_desc}{call_type_suffix}");
 
     if let Some(err) = &node.error {
-        let reason = node
-            .output
-            .as_deref()
-            .and_then(abi_decoder::decode_revert_reason)
-            .or_else(|| {
-                node.output
-                    .as_deref()
-                    .and_then(|o| abi_decoder::decode_custom_revert(o, resolver))
-            });
+        let reason = resolve_revert_reason(node.output.as_deref(), resolver);
         let err_msg = if let Some(reason) = reason {
             pal.red(&format!("↳ error: {err} — {reason}"))
         } else {
@@ -328,6 +320,27 @@ fn print_arg(
                 abi_decoder::format_value(value)
             );
         }
+    }
+}
+
+fn resolve_revert_reason(output: Option<&str>, resolver: &mut SelectorResolver) -> Option<String> {
+    if let Some(reason) = output.and_then(abi_decoder::decode_revert_reason) {
+        return Some(reason);
+    }
+
+    let output = output?;
+    let selector = output.get(..10)?;
+    let sig = resolver.resolve(selector, Some(output))?;
+    let name = sig.split('(').next().unwrap_or(&sig);
+
+    if let Some(args) = abi_decoder::decode_function_args(&sig, output) {
+        let fmt: Vec<_> = args
+            .iter()
+            .map(|(_, v)| abi_decoder::format_value(v))
+            .collect();
+        Some(format!("{name}({})", fmt.join(", ")))
+    } else {
+        Some(sig)
     }
 }
 
